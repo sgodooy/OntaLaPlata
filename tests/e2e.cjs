@@ -148,6 +148,12 @@ const n = (t) => parseInt(t.replace(/[^\d-]/g, ''), 10);
   await va('movimientos'); await q.fill('[data-f=q]', 'amigo');
   assert.equal(await q.locator('#lista-movs button.fila').count(), 2);
   await q.fill('[data-f=q]', '');
+  // un filtro de fecha que deja la lista vacía se puede quitar desde ahí mismo
+  await q.fill('[data-f=desde]', '2030-01-01');
+  assert.equal(await q.locator('#lista-movs button.fila').count(), 0);
+  await q.click('[data-a=limpiar-filtros]');
+  assert.ok(await q.locator('#lista-movs button.fila').count() >= 5);
+  assert.equal(await q.inputValue('[data-f=desde]'), '');
   // presupuesto: cambiarlo deja historial; categoría nueva
   await va('presupuestos');
   await q.locator('.pres[data-a=ed-pres]', { hasText: 'Almuerzos' }).click(); await q.fill('#hoja input[name=monto]', '200000'); await ok2();

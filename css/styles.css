@@ -188,3 +188,6 @@ input[type="date"] { -webkit-appearance: none; appearance: none; min-width: 0; m
 input[type="date"]::-webkit-date-and-time-value { text-align: left; min-height: 1.3em; }
 .filtros > *, .dos > *, .cal-mes > * { min-width: 0; }
 @media (max-width: 359px) { .cal-sem, .cal-mes { gap: 2px; } .cal-dia { border-radius: 9px; } }
+
+.filtros label { font-size: .72rem; font-weight: 700; color: var(--gris); text-transform: uppercase; letter-spacing: .04em; }
+.filtros label .entrada { margin-top: 3px; }

@@ -2,6 +2,8 @@ import * as C from './core.js';
 import * as DB from './db.js';
 import { iniciarTour, tourActivo } from './tour.js';
 
+const VERSION_APP = 7; // sube con cada publicación; se muestra en Ajustes
+
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const f$ = C.fmt;
@@ -149,10 +151,11 @@ function listaMovs() {
     if (q && !`${m.descripcion} ${m.nota} ${m.persona || ''} ${C.categoria(state, m.categoriaId)?.nombre || ''}`.toLowerCase().includes(q)) return false;
     return true;
   }).sort((a, b) => b.fecha.localeCompare(a.fecha) || (b.creado || '').localeCompare(a.creado || ''));
-  if (!l.length) return `<div class="vacio">${state.movimientos.length ? 'Ningún movimiento coincide con los filtros.' : 'Todavía no hay movimientos. Toque el botón + para registrar el primero.'}</div>`;
+  const quitar = Object.values(f).some(Boolean) ? ' <button class="enlace" data-a="limpiar-filtros">Quitar filtros</button>' : '';
+  if (!l.length) return `<div class="vacio">${state.movimientos.length ? `Ningún movimiento coincide con los filtros.<br>${quitar}` : 'Todavía no hay movimientos. Toque el botón + para registrar el primero.'}</div>`;
   let h = '', dia = '';
   const gastos = l.filter((m) => m.tipo === 'gasto').reduce((a, m) => a + m.valor, 0);
-  h += `<div class="suave">${l.length} ${l.length === 1 ? 'movimiento' : 'movimientos'} · gastos por ${f$(gastos)}</div>`;
+  h += `<div class="suave">${l.length} ${l.length === 1 ? 'movimiento' : 'movimientos'} · gastos por ${f$(gastos)}${quitar ? ' ·' + quitar : ''}</div>`;
   for (const m of l) {
     if (m.fecha !== dia) { if (dia) h += '</div>'; dia = m.fecha; h += `<div class="dia">${C.fechaCorta(dia)} ${dia.slice(0, 4)}</div><div class="tarjeta">`; }
     h += filaMov(m);
@@ -168,8 +171,8 @@ function vMovimientos() {
     <select class="entrada" data-f="tipo" aria-label="Tipo"><option value="">Todos los tipos</option>${op(C.TIPOS.map((t) => ({ id: t, nombre: C.NOMBRE_TIPO[t] })), f.tipo)}</select>
     <select class="entrada" data-f="cat" aria-label="Categoría"><option value="">Todas las categorías</option>${op(state.categorias, f.cat)}</select>
     <select class="entrada" data-f="cuenta" aria-label="Cuenta"><option value="">Todas las cuentas</option>${op(state.cuentas, f.cuenta)}</select>
-    <input class="entrada" type="date" data-f="desde" value="${f.desde}" aria-label="Desde">
-    <input class="entrada" type="date" data-f="hasta" value="${f.hasta}" aria-label="Hasta">
+    <label>Desde<input class="entrada" type="date" data-f="desde" value="${f.desde}"></label>
+    <label>Hasta<input class="entrada" type="date" data-f="hasta" value="${f.hasta}"></label>
   </div><div id="lista-movs">${listaMovs()}</div>`;
 }
 
@@ -320,7 +323,9 @@ function vAjustes() {
     <div class="botones"><button class="btn sec" data-a="revision">Revisar una copia (solo lectura)</button></div>
     <div class="botones ed"><button class="btn sec" data-a="restaurar">Restaurar una copia</button><button class="btn peligro" data-a="borrar-todo">Borrar todo</button></div></div>
     <h2>Ayuda</h2><div class="tarjeta"><button class="btn sec ancho" data-a="recorrido">Ver el recorrido otra vez</button></div>
-    <p class="suave">Para revisar en el computador: descargue la copia en el celular, pásela al computador y ábrala con «Revisar una copia».</p></div></div>`;
+    <p class="suave">Para revisar en el computador: descargue la copia en el celular, pásela al computador y ábrala con «Revisar una copia».</p>
+    <h2>Versión</h2><div class="tarjeta"><p>Está usando la versión <b id="version">${VERSION_APP}</b> de VAINAS.</p><button class="btn sec ancho" data-a="actualizar">Buscar actualización</button>
+    <p class="suave">Actualizar no toca sus datos.</p></div></div></div>`;
 }
 
 // ---------- recorrido guiado ----------
@@ -537,6 +542,16 @@ const acciones = {
   'quitar-cuenta': (el) => { if (confirm('¿Quitar esta cuenta? Si tiene movimientos se archiva para conservar el historial.')) commit(() => C.quitarCuenta(state, el.dataset.id), 'Cuenta quitada.'); },
   recorrido: () => { if (ui.ruta !== 'inicio') { ui.ruta = 'inicio'; history.replaceState(null, '', '#inicio'); render(); } window.scrollTo(0, 0); recorrido(); },
   cuadre: hojaCuadre,
+  'limpiar-filtros': () => { ui.filtros = { q: '', periodo: '', cat: '', cuenta: '', tipo: '', desde: '', hasta: '' }; render(); },
+  actualizar: async () => {
+    aviso('Buscando la versión más nueva…');
+    try {
+      const reg = await navigator.serviceWorker?.getRegistration();
+      await reg?.update();
+      for (const k of await caches.keys()) await caches.delete(k);
+    } catch (e) { /* sin conexión: se recarga con lo que haya */ }
+    location.reload();
+  },
   'abrir-periodo': hojaAbrir,
   'me-pagaron': () => hojaMov('ingreso', null, { nueva: true }),
   'deshacer-periodo': () => { if (confirm('¿Deshacer la apertura de esta quincena? Sus gastos vuelven a contar en la anterior y se quitan sus presupuestos.')) commit(() => { C.deshacerPeriodo(state); ui.perPres = ui.perAna = null; }, 'Quincena deshecha.'); },
@@ -666,6 +681,7 @@ $('#archivo').addEventListener('change', async (e) => {
   } catch (err) { aviso(err instanceof SyntaxError ? 'El archivo no es una copia de VAINAS.' : err.message, true); }
 });
 function navegar() {
+  if (!state) return;
   const r = location.hash.slice(1);
   ui.ruta = TITULOS[r] ? r : 'inicio';
   if (state.config.setupDone && !ui.revision && C.ponerAlDia(state, hoy())) DB.guardar(state).catch(() => {});
@@ -675,9 +691,24 @@ window.addEventListener('hashchange', navegar);
 
 // ---------- arranque ----------
 (async () => {
-  try { state = C.migrar(await DB.cargar()); } catch (e) { aviso('No se pudo abrir la base de datos de este navegador.', true); }
+  // Si los datos no se pueden leer, la app se detiene: seguir desde cero podría sobrescribirlos.
+  try {
+    state = C.migrar(await DB.cargar());
+    if (state && state.version !== C.VERSION) throw new Error('versión de datos desconocida');
+  } catch (e) {
+    state = null;
+    document.body.classList.add('sin-nav');
+    $('#vista').innerHTML = `<div class="tarjeta"><h2>No pude abrir sus datos</h2><p>No se ha borrado nada. Lo más probable es que la app se esté actualizando.</p>
+      <button class="btn ancho" data-a="actualizar">Actualizar y volver a intentar</button><p class="suave">Versión ${VERSION_APP}. Detalle: ${esc(e.message)}</p></div>`;
+    return;
+  }
   if (!state) state = C.estadoInicial();
   navegar();
   navigator.storage?.persist?.().catch(() => {});
-  if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    // Cuando llega una versión nueva, la app se recarga una sola vez para no mezclar archivos viejos y nuevos.
+    const tenia = !!navigator.serviceWorker.controller; let recargada = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (tenia && !recargada) { recargada = true; location.reload(); } });
+    navigator.serviceWorker.register('sw.js').then((reg) => reg.update()).catch(() => {});
+  }
 })();
