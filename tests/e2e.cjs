@@ -195,7 +195,9 @@ const n = (t) => parseInt(t.replace(/[^\d-]/g, ''), 10);
   await va('inicio');
   const colorDe = (nombre) => q.evaluate((nm) => getComputedStyle([...document.querySelectorAll('.cuenta')].find((e) => e.textContent.includes(nm))).backgroundColor, nombre);
   assert.equal(await colorDe('Nu'), 'rgb(130, 10, 209)');
-  assert.equal(await colorDe('Bancolombia'), 'rgb(253, 218, 36)');
+  assert.equal(await colorDe('Bancolombia'), 'rgb(33, 33, 32)');
+  // los tres íconos cargan de verdad
+  assert.equal(await q.evaluate(() => [...document.querySelectorAll('.cuenta img')].filter((i) => i.complete && i.naturalWidth === 180).length), 3);
   await va('cuentas');
   await q.locator('.tarjeta', { hasText: 'Efectivo' }).locator('[data-a=ed-cuenta]').click();
   await q.fill('#hoja input[name=color]', '#123456');
@@ -203,8 +205,8 @@ const n = (t) => parseInt(t.replace(/[^\d-]/g, ''), 10);
   await q.setInputFiles('#hoja input[data-icono]', { name: 'logo.png', mimeType: 'image/png', buffer: png });
   await q.waitForSelector('#hoja .c-prev img'); await ok2();
   await va('inicio');
-  assert.equal(await q.locator('.cuenta img').count(), 1);
-  assert.equal(await q.evaluate(() => getComputedStyle(document.querySelector('.cuenta img').closest('.cuenta')).backgroundColor), 'rgb(18, 52, 86)');
+  assert.equal(await q.locator('.cuenta img').count(), 4);
+  assert.equal(await q.evaluate(() => getComputedStyle(document.querySelector('.cuenta img[src^="data:"]').closest('.cuenta')).backgroundColor), 'rgb(18, 52, 86)');
   // cuadre de caja
   const a2 = await tot();
   await va('cuentas'); await q.click('[data-a=cuadre]');

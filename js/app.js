@@ -3,7 +3,7 @@ import * as DB from './db.js';
 import { iniciarTour, tourActivo } from './tour.js';
 import * as FX from './efectos.js';
 
-const VERSION_APP = 17; // sube con cada publicación; se muestra en Ajustes
+const VERSION_APP = 18; // sube con cada publicación; se muestra en Ajustes
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -90,28 +90,28 @@ function render() {
   else if (ruta === 'inicio' && !state.config.tourVisto && !ui.revision && !tourActivo()) recorrido();
 }
 
-// Color e insignia de cada cuenta. Los colores sugeridos son los que la gente asocia con cada entidad;
-// la imagen la pone la persona desde su propio celular.
-const COLORES_CUENTA = [[/^nu\b/i, '#820ad1', 'nu'], [/bancolombia/i, '#fdda24', 'B'], [/nequi/i, '#da0081', 'N'], [/daviplata|davivienda/i, '#ed1c27', 'D'], [/efectivo/i, '#2f5d50', '$']];
+// Color e ícono de cada cuenta. Para Nu, Bancolombia y Nequi se usa el ícono de su app, solo para identificar
+// la cuenta; la fila toma el color de fondo de ese ícono. La persona puede cambiar ambos.
+const COLORES_CUENTA = [[/^nu\b/i, '#820ad1', 'nu', 'icons/cuentas/nu.png'], [/bancolombia/i, '#212120', 'B', 'icons/cuentas/bancolombia.png'], [/nequi/i, '#ece7f5', 'N', 'icons/cuentas/nequi.png'], [/daviplata|davivienda/i, '#ed1c27', 'D'], [/efectivo/i, '#2f5d50', '$']];
 function aspectoCuenta(c) {
   const sug = COLORES_CUENTA.find(([rx]) => rx.test(c.nombre));
   const bg = C.COLOR_OK.test(c.color || '') ? c.color : (sug ? sug[1] : '#e4d8bd');
   const [r, g, b] = [1, 3, 5].map((i) => parseInt(bg.slice(i, i + 2), 16));
   const claro = (r * 299 + g * 587 + b * 114) / 1000 > 150;
-  return { bg, fg: claro ? '#2a2420' : '#ffffff', sigla: sug ? sug[2] : (c.nombre.trim()[0] || '?').toUpperCase(), icono: C.ICONO_OK.test(c.icono || '') ? c.icono : null };
+  return { bg, fg: claro ? '#2a2420' : '#ffffff', sigla: sug ? sug[2] : (c.nombre.trim()[0] || '?').toUpperCase(), propio: C.ICONO_OK.test(c.icono || '') ? c.icono : null, icono: C.ICONO_OK.test(c.icono || '') ? c.icono : (sug?.[3] || null) };
 }
 function filaCuenta(c, saldo) {
   const a = aspectoCuenta(c);
   return `<div class="cuenta" style="background:${a.bg};color:${a.fg}"><div class="c-id">${a.icono ? `<img src="${a.icono}" alt=""><span class="oculto">${esc(c.nombre)}</span>` : `<span class="c-sigla">${esc(a.sigla)}</span><span class="nombre">${esc(c.nombre)}</span>`}</div><span class="num">${f$(saldo)}</span></div>`;
 }
 function hojaCuenta(c) {
-  const a = c ? aspectoCuenta(c) : { bg: '#2f5d50', icono: null };
-  abrirHoja(c ? 'Editar cuenta' : 'Nueva cuenta', `<form data-form="cuenta"><input type="hidden" name="id" value="${c?.id || ''}"><input type="hidden" name="icono" value="${a.icono || ''}">
+  const a = c ? aspectoCuenta(c) : { bg: '#2f5d50', icono: null, propio: null };
+  abrirHoja(c ? 'Editar cuenta' : 'Nueva cuenta', `<form data-form="cuenta"><input type="hidden" name="id" value="${c?.id || ''}"><input type="hidden" name="icono" value="${a.propio || ''}">
     ${campo('Nombre', `<input name="nombre" value="${esc(c?.nombre || '')}" maxlength="40" required>`)}${c ? '' : campo('Saldo de hoy', inMonto('saldo'))}
     ${campo('Color de la fila', `<input type="color" name="color" value="${a.bg}">`)}
-    <fieldset><legend>Logo o imagen (opcional)</legend><div class="c-prev">${a.icono ? `<img src="${a.icono}" alt="Imagen actual">` : '<span class="suave">Sin imagen: se muestra una inicial.</span>'}</div>
+    <fieldset><legend>Logo o imagen (opcional)</legend><div class="c-prev">${a.icono ? `<img src="${a.icono}" alt="Imagen actual">` : '<span class="suave">Sin imagen: se muestra una inicial.</span>'}${a.icono && !a.propio ? ' <span class="suave">&nbsp;Ícono de la app, puesto según el nombre de la cuenta.</span>' : ''}</div>
     <div class="botones"><label class="btn sec">Elegir imagen<input type="file" accept="image/*" data-icono hidden></label><button type="button" class="btn sec" data-a="quitar-icono">Quitar imagen</button></div>
-    <p class="suave">Puede usar una captura del ícono de la app de su banco. La imagen se guarda solo en este dispositivo y reemplaza el nombre en la fila.</p></fieldset>
+    <p class="suave">Nu, Bancolombia y Nequi ya traen su ícono. Para otra entidad, o si prefiere otra imagen, elíjala aquí: se guarda solo en este dispositivo y reemplaza el nombre en la fila.</p></fieldset>
     <button class="btn ancho">${c ? 'Guardar' : 'Crear'}</button></form>`);
 }
 // Reduce la imagen elegida a un cuadrado pequeño para que pese poco.
@@ -623,7 +623,7 @@ const acciones = {
   'tipo-ana': (el) => { ui.tipoAna = el.dataset.t; render(); },
   'ver-cuenta': (el) => { ui.filtros = { ...filtrosVacios(), cuenta: el.dataset.id }; location.hash = '#movimientos'; },
   'nueva-cuenta': () => hojaCuenta(null),
-  'quitar-icono': (el) => { const f = el.closest('form'); f.elements.icono.value = ''; f.querySelector('.c-prev').innerHTML = '<span class="suave">Sin imagen: se muestra una inicial.</span>'; },
+  'quitar-icono': (el) => { const f = el.closest('form'); f.elements.icono.value = ''; f.querySelector('.c-prev').innerHTML = '<span class="suave">Sin imagen propia. Al guardar queda el ícono que corresponda al nombre, o una inicial.</span>'; },
   'ed-cuenta': (el) => hojaCuenta(C.cuenta(state, el.dataset.id)),
   'quitar-cuenta': (el) => { if (confirm('¿Quitar esta cuenta? Si tiene movimientos se archiva para conservar el historial.')) commit(() => C.quitarCuenta(state, el.dataset.id), 'Cuenta quitada.'); },
   recorrido: () => { if (ui.ruta !== 'inicio') { ui.ruta = 'inicio'; history.replaceState(null, '', '#inicio'); render(); } window.scrollTo(0, 0); recorrido(); },
