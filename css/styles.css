@@ -195,3 +195,11 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; min-height: 
 .filtro-cats { margin: 0; border: 1.5px solid var(--linea); border-radius: 12px; background: var(--papel); padding: 0 10px; }
 .filtro-cats summary { padding: 9px 0; font-size: .9rem; font-weight: 600; color: var(--tinta); }
 .filtro-cats .chips { padding: 2px 0 10px; } .filtro-cats .chip span { padding: 7px 10px; font-size: .85rem; }
+
+/* iPhone: la barra de estado queda siempre sobre fondo verde y la cabecera se pega debajo de ella. */
+body::before { content: ""; position: fixed; top: 0; left: 0; right: 0; height: env(safe-area-inset-top, 0px); background: var(--verde); z-index: 10; }
+.cabeza { top: env(safe-area-inset-top, 0px); }
+/* iPhone: texto de guía en los campos de fecha vacíos, que Safari deja en blanco. */
+@supports (-webkit-touch-callout: none) {
+  input[type="date"].vacia::before { content: "dd/mm/aaaa"; color: var(--gris); }
+}

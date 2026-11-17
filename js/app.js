@@ -2,7 +2,7 @@ import * as C from './core.js';
 import * as DB from './db.js';
 import { iniciarTour, tourActivo } from './tour.js';
 
-const VERSION_APP = 8; // sube con cada publicación; se muestra en Ajustes
+const VERSION_APP = 9; // sube con cada publicación; se muestra en Ajustes
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -42,7 +42,10 @@ function abrirHoja(titulo, html) {
   $('#hoja').innerHTML = `<h3>${esc(titulo)}<button class="cerrar" data-a="cerrar" aria-label="Cerrar">×</button></h3>${html}`;
   $('#fondo').hidden = false;
   $('#hoja').scrollTop = 0;
+  marcarFechas();
 }
+// En el iPhone un campo de fecha vacío se ve en blanco: se marca para mostrarle un texto de guía.
+function marcarFechas() { document.querySelectorAll('input[type=date]').forEach((el) => el.classList.toggle('vacia', !el.value)); }
 function cerrarHoja() { $('#fondo').hidden = true; $('#hoja').innerHTML = ''; }
 const activas = () => state.cuentas.filter((c) => !c.archivada);
 const cats = () => state.categorias.filter((c) => !c.archivada);
@@ -75,6 +78,7 @@ function render() {
   document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('activa', a.dataset.r === ruta));
   const v = { setup: vSetup, inicio: vInicio, movimientos: vMovimientos, presupuestos: vPresupuestos, reservas: vReservas, analisis: vAnalisis, cuentas: vCuentas, ajustes: vAjustes }[ruta] || vInicio;
   $('#vista').innerHTML = (ui.revision ? `<div class="banda ok"><span><b>Modo revisión.</b> Está viendo una copia de seguridad, sin poder cambiarla.</span><button class="btn mini" data-a="salir-revision">Salir</button></div>` : '') + v();
+  marcarFechas();
   if (setup) chequeoSetup();
   // Primera vez con la app ya configurada: se muestra el recorrido guiado.
   else if (ruta === 'inicio' && !state.config.tourVisto && !ui.revision && !tourActivo()) recorrido();
@@ -668,6 +672,7 @@ document.addEventListener('submit', (e) => {
 document.addEventListener('input', (e) => {
   const t = e.target;
   if (t.classList.contains('monto')) t.value = miles(C.parseMonto(t.value));
+  if (t.type === 'date') t.classList.toggle('vacia', !t.value);
   if (t.dataset.f) { ui.filtros[t.dataset.f] = t.value; $('#lista-movs').innerHTML = listaMovs(); }
   if (t.dataset.fc) {
     const c = ui.filtros.cats, id = t.dataset.fc;
