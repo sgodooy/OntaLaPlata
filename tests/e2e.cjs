@@ -197,6 +197,20 @@ const n = (t) => parseInt(t.replace(/[^\d-]/g, ''), 10);
   await va('presupuestos'); assert.equal(await q.locator('[data-a=deshacer-periodo]').count(), 1);
   assert.equal(await q.locator('.pres[data-a=ed-pres]').count(), 3);
   const a5 = await tot(); assert.equal(a5.cuentas, a4.cuentas + 1000000);
+  // los días del calendario y los campos de fecha caben en su tarjeta, también en celulares angostos
+  for (const ancho of [320, 375, 390]) {
+    await q.setViewportSize({ width: ancho, height: 800 });
+    for (const r of ['reservas', 'movimientos']) {
+      await va(r);
+      const fuera = await q.evaluate(() => [...document.querySelectorAll('.cal-dia, input[type=date]')].filter((el) => {
+        const c = el.closest('.tarjeta, .filtros').getBoundingClientRect(), b = el.getBoundingClientRect();
+        return b.left < c.left - 0.5 || b.right > c.right + 0.5;
+      }).length);
+      assert.equal(fuera, 0, `algo se sale del margen en ${r} a ${ancho}px`);
+      assert.ok(await q.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `desborde en ${r} a ${ancho}px`);
+    }
+  }
+  await q.setViewportSize({ width: 390, height: 844 });
   // nada se desborda hacia los lados en el celular
   for (const r of ['inicio', 'movimientos', 'presupuestos', 'reservas', 'analisis', 'cuentas', 'ajustes']) {
     await va(r);

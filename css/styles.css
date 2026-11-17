@@ -170,7 +170,7 @@ body.sin-nav .nav, body.sin-nav .fab, body.sin-nav .engranaje { display: none; }
 .cal-cab { display: flex; align-items: center; justify-content: space-between; gap: 8px; } .cal-cab h2 { margin: 0; }
 .cal-sem, .cal-mes { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
 .cal-sem { margin: 12px 0 4px; text-align: center; font-family: var(--titulos); font-size: .72rem; color: var(--gris); }
-.cal-dia { aspect-ratio: 1; min-height: 44px; border: 1.5px solid transparent; border-radius: 12px; background: var(--crema); padding: 4px 0 0; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.cal-dia { width: 100%; min-width: 0; height: 46px; margin: 0; border: 1.5px solid transparent; border-radius: 12px; background: var(--crema); padding: 4px 0 0; display: flex; flex-direction: column; align-items: center; gap: 3px; }
 .cal-dia b { font-family: var(--titulos); font-size: .92rem; font-weight: 600; }
 .cal-dia span { display: flex; gap: 2px; flex-wrap: wrap; justify-content: center; }
 .cal-dia.hoy { border-color: var(--verde); } .cal-dia.sel { background: var(--verde); color: var(--crema); }
@@ -182,3 +182,9 @@ i.p-vencida { background: var(--terra); } i.p-cancelada { background: var(--gris
 i.p-previsto { background: none; border: 2px solid var(--gris); } .cal-dia.sel i.p-previsto { border-color: var(--crema); }
 .cal-ley { margin: 12px 0 0; } .cal-ley i { margin-right: 4px; } .cal-ley i.p-pago { border-radius: 2px; height: 5px; width: 12px; vertical-align: 1px; }
 .cal-det { border-top: 1.5px solid var(--linea); margin-top: 12px; }
+
+/* En el iPhone los campos de fecha traen un ancho propio y se salen de su casilla. */
+input[type="date"] { -webkit-appearance: none; appearance: none; min-width: 0; max-width: 100%; text-align: left; }
+input[type="date"]::-webkit-date-and-time-value { text-align: left; min-height: 1.3em; }
+.filtros > *, .dos > *, .cal-mes > * { min-width: 0; }
+@media (max-width: 359px) { .cal-sem, .cal-mes { gap: 2px; } .cal-dia { border-radius: 9px; } }
