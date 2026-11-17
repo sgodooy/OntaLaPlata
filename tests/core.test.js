@@ -43,7 +43,7 @@ test('2. una transferencia no cambia el total ni cuenta como gasto o ingreso', (
   C.agregarMovimiento(s, { tipo: 'transferencia', valor: 100000, fecha: HOY, cuentaId: banco.id, cuentaDestinoId: nu.id });
   const r = inv(s);
   assert.equal(C.saldos(s)[banco.id], 400000); assert.equal(C.saldos(s)[nu.id], 130000);
-  assert.deepEqual([r.enCuentas, r.libre, r.gastosPeriodo, r.ingresosPeriodo], [antes.enCuentas, antes.libre, 0, 0]);
+  assert.deepEqual([r.enCuentas, r.libre, r.gastosPeriodo, r.ingresosPeriodo], [antes.enCuentas, antes.libre, 0, 1000000]); // el pago inicial cuenta como ingreso de la quincena
   assert.throws(() => C.agregarMovimiento(s, { tipo: 'transferencia', valor: 1, fecha: HOY, cuentaId: banco.id, cuentaDestinoId: banco.id }));
 });
 
@@ -109,14 +109,14 @@ test('7. prestar no es gasto y cobrar el préstamo no es ingreso', () => {
   C.cobrar(s, pc.id, { cuentaId: nequi.id, fecha: HOY });
   r = inv(s);
   assert.equal(C.saldos(s)[nequi.id], 70000);
-  assert.equal(r.ingresosPeriodo, 0);
+  assert.equal(r.ingresosPeriodo, 1000000);
   assert.equal(r.enCuentas, antes.enCuentas);
   assert.throws(() => C.cobrar(s, pc.id, { cuentaId: nequi.id, fecha: HOY }));
   // una deuda que no nació de un préstamo sí cuenta como ingreso al recibirla
   const otra = C.agregarPorCobrar(s, { persona: 'Ana', valor: 20000, fecha: HOY });
   assert.equal(inv(s).enCuentas, antes.enCuentas);
   C.cobrar(s, otra.id, { cuentaId: nequi.id, fecha: HOY });
-  assert.equal(inv(s).ingresosPeriodo, 20000);
+  assert.equal(inv(s).ingresosPeriodo, 1020000);
 });
 
 test('8. el pago abre una quincena nueva, aunque llegue antes o después del día 15', () => {
@@ -229,7 +229,14 @@ test('una copia de la versión anterior se convierte al modelo de pago a pago', 
   for (const x of v1.reservas) x.periodo = '2026-11-B';
   const m = C.validarEstado(v1);
   assert.equal(m.version, 2);
-  assert.deepEqual(m.periodos, [{ id: '2026-11-15', inicio: '2026-11-15', cubierto: '2026-11-30' }]);
+  assert.deepEqual(m.periodos, [{ id: '2026-11-15', inicio: '2026-11-15', cubierto: '2026-11-30', ingresoInicial: 1000000 }]);
+  // datos de la versión actual sin ese dato: se completa una sola vez y se puede corregir
+  const v2 = JSON.parse(JSON.stringify(s)); delete v2.periodos[0].ingresoInicial;
+  assert.equal(C.migrar(v2).periodos[0].ingresoInicial, 1000000);
+  const libre = C.resumen(v2, HOY).libre;
+  C.fijarIngresoInicial(v2, P, 930000);
+  assert.equal(C.resumen(v2, HOY).ingresosPeriodo, 930000);
+  assert.equal(C.resumen(v2, HOY).libre, libre); // no cambia saldos ni plata libre
   assert.equal(C.resumen(m, HOY).presupRest, 225000);
 });
 

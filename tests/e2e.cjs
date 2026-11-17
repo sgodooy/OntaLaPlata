@@ -102,7 +102,7 @@ const n = (t) => parseInt(t.replace(/[^\d-]/g, ''), 10);
   const t6 = await leer();
   assert.equal(t6.cuentas, t4.cuentas); assert.equal(t6.libre, t4.libre);
   assert.match(await p.textContent('#vista'), /Gastos del periodo.*\$365\.000/s);
-  assert.match(await p.textContent('#vista'), /Ingresos del periodo.*\$0/s);
+  assert.match(await p.textContent('#vista'), /Ingresos del periodo.*\$1\.000\.000/s);
   if (SHOTS) await p.screenshot({ path: SHOTS + '/2-inicio.png', fullPage: true });
 
   // 6. cerrar y volver a abrir

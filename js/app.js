@@ -2,7 +2,7 @@ import * as C from './core.js';
 import * as DB from './db.js';
 import { iniciarTour, tourActivo } from './tour.js';
 
-const VERSION_APP = 11; // sube con cada publicación; se muestra en Ajustes
+const VERSION_APP = 12; // sube con cada publicación; se muestra en Ajustes
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -120,7 +120,7 @@ function vInicio() {
     <div class="barra ${pct > 100 ? 'pasado' : pct >= 80 ? 'alerta' : ''}"><i style="width:${Math.min(100, pct)}%"></i></div>
     <div class="pie"><span>Gastado ${f$(r.presupGastado)}</span><span>Quedan ${f$(r.presupRest)}</span></div></div>
     <div class="fila"><div>Gastos del periodo<div class="suave">incluye pagos de reservas</div></div>${num(r.gastosPeriodo)}</div>
-    <div class="fila"><div>Ingresos del periodo</div>${num(r.ingresosPeriodo)}</div></div>`;
+    <button class="fila" data-a="ingreso-inicial"><div>Ingresos del periodo<div class="suave">${C.ultimoPeriodo(state)?.ingresoInicial ? `incluye ${f$(C.ultimoPeriodo(state).ingresoInicial)} del pago con que empezó · ` : ''}<u class="ed">corregir</u></div></div>${num(r.ingresosPeriodo)}</button></div>`;
   h += '</div><div>';
   const pend = state.reservas.filter((x) => x.estado === 'pendiente').sort((a, b) => a.vence.localeCompare(b.vence)).slice(0, 6);
   h += `<h2>Próximas obligaciones <a class="enlace" href="#reservas">Calendario</a></h2><div class="tarjeta">${pend.length ? pend.map(filaReserva).join('') : '<div class="vacio">No hay obligaciones pendientes.</div>'}</div>`;
@@ -393,7 +393,7 @@ function vSetup() {
     <h2><span><span class="paso">2</span>¿Cuánto le entra por quincena?</span></h2>
     <div class="tarjeta"><div class="dos">${campo('Ingreso quincenal', inMonto('ingreso', state.config.ingresoQuincenal))}${campo('Pesos por dólar', inMonto('tasa', state.config.tasaUSD))}</div>
       ${campo('¿Cuándo le pagaron la última vez?', `<input type="date" name="inicio" value="${ultimoPagoProbable()}" max="${hoy()}" required>`)}
-      <p class="suave">Su quincena va de un pago al siguiente. Cada vez que registre el sueldo, empieza una nueva.</p></div>
+      <p class="suave">Su quincena va de un pago al siguiente. Ese último pago ya está dentro de los saldos de arriba, así que se anota como ingreso de esta quincena sin sumarlo otra vez. Cada vez que registre un sueldo nuevo, empieza otra.</p></div>
     <h2><span><span class="paso">3</span>Platica que ya tiene dueño</span></h2>
     <div class="tarjeta"><p class="suave">Estas son de ejemplo: corrija el nombre, el valor y el día en que vencen (día del mes; en las quincenales, 1 es el mismo día del pago). Desmarque las que no apliquen; después puede agregar más.</p>
       ${state.obligaciones.map((o) => `<div class="ob"><input type="checkbox" name="on_${o.id}" ${o.activa ? 'checked' : ''} aria-label="Incluir ${esc(o.nombre)}" style="width:22px;height:22px">
@@ -576,6 +576,9 @@ const acciones = {
   recorrido: () => { if (ui.ruta !== 'inicio') { ui.ruta = 'inicio'; history.replaceState(null, '', '#inicio'); render(); } window.scrollTo(0, 0); recorrido(); },
   'poner-fecha': (el) => { const i = el.closest('form').elements.fecha; i.value = el.dataset.f; marcarFechas(); },
   cuadre: hojaCuadre,
+  'ingreso-inicial': () => { const p = C.ultimoPeriodo(state); abrirHoja('Pago con que empezó la quincena', `<form data-form="ingresoInicial">
+    <p class="suave">Es el pago que ya tenía en sus cuentas cuando empezó esta quincena, el ${C.fechaCorta(p.inicio)}. Se anota como ingreso del periodo sin sumarlo otra vez a los saldos. Si registró ese pago con el botón +, déjelo en cero.</p>
+    ${campo('Valor del pago', inMonto('valor', p.ingresoInicial || 0))}<button class="btn ancho">Guardar</button></form>`); },
   'cat-nueva': () => hojaCategoria(null),
   'cat-editar': (el) => hojaCategoria(C.categoria(state, el.dataset.id)),
   'cat-quitar': (el) => {
@@ -679,6 +682,7 @@ const formularios = {
     else C.guardarObligacion(state, { ...base, frecuencia: 'mensual', dia: C.partes(d.fecha).d }, hoy());
   }, 'Esa platica ya tiene dueño.'),
   categoria: (d) => commit(() => C.guardarCategoria(state, { id: d.id || undefined, nombre: d.nombre, tipo: d.tipo, valorRef: C.parseMonto(d.valorRef), comida: d.comida === 'on' }), d.id ? 'Categoría guardada.' : 'Categoría agregada.'),
+  ingresoInicial: (d) => commit(() => C.fijarIngresoInicial(state, C.ultimoPeriodo(state).id, C.parseMonto(d.valor)), 'Guardado.'),
   cuenta: (d) => commit(() => C.guardarCuenta(state, { id: d.id || undefined, nombre: d.nombre, saldoInicial: C.parseMonto(d.saldo) }, hoy()), 'Cuenta guardada.'),
   cuadre: (d) => commit(() => {
     const reales = {};

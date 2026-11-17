@@ -171,7 +171,8 @@ export function resumen(s, fecha = hoy()) {
   const reservasPend = s.reservas.filter((x) => x.estado === 'pendiente' && x.vence <= hasta).reduce((a, x) => a + x.monto, 0);
   const pres = periodo ? presupuestosDe(s, periodo) : [];
   const presupRest = pres.reduce((a, p) => a + p.resta, 0);
-  let gastosPeriodo = 0, ingresosPeriodo = 0;
+  // El pago con que empezó la quincena cuenta como ingreso aunque ya estuviera dentro de los saldos iniciales.
+  let gastosPeriodo = 0, ingresosPeriodo = s.periodos.find((p) => p.id === periodo)?.ingresoInicial || 0;
   for (const m of s.movimientos) {
     if (periodoDe(s, m.fecha) !== periodo) continue;
     if (m.tipo === 'ingreso' || (m.tipo === 'cobro' && m.esIngreso)) ingresosPeriodo += m.valor;
@@ -407,7 +408,7 @@ export function abrirPeriodo(s, inicio, { arrastrar = false } = {}) {
   const previo = ultimoPeriodo(s);
   if (previo && inicio <= previo.inicio) throw new Error(`La quincena nueva debe empezar después del ${fechaCorta(previo.inicio)}, cuando empezó la actual.`);
   const fin = sumarDias(inicio, DIAS_PERIODO - 1);
-  const p = { id: inicio, inicio, cubierto: previo && previo.cubierto > fin ? previo.cubierto : fin };
+  const p = { id: inicio, inicio, cubierto: previo && previo.cubierto > fin ? previo.cubierto : fin, ingresoInicial: 0 };
   s.periodos.push(p);
   generarReservas(s, previo ? sumarDias(previo.cubierto, 1) : inicio, p.cubierto, inicio);
   if (!previo) return p;
@@ -507,7 +508,8 @@ export function configurar(s, { saldos: sal = {}, ingreso, tasa, obligaciones = 
     Object.assign(o, d);
     if (o.activa) validarObligacion(o);
   }
-  const periodo = abrirPeriodo(s, inicio).id;
+  const abierto = abrirPeriodo(s, inicio), periodo = abierto.id;
+  abierto.ingresoInicial = ingreso; // ese pago ya está dentro de los saldos: se anota sin sumarlo otra vez
   ponerAlDia(s, fecha);
   for (const [catId, monto] of Object.entries(presupuestos)) if (monto > 0) fijarPresupuesto(s, periodo, catId, monto, fecha);
   s.config.setupDone = true; s.config.ultimoCuadre = fecha;
@@ -515,7 +517,7 @@ export function configurar(s, { saldos: sal = {}, ingreso, tasa, obligaciones = 
 
 // ---------- capítulos (cierre de quincena) ----------
 export function capitulo(s, periodo) {
-  let ingresos = 0, gastos = 0, pagosReservas = 0, invitaciones = 0;
+  let ingresos = s.periodos.find((p) => p.id === periodo)?.ingresoInicial || 0, gastos = 0, pagosReservas = 0, invitaciones = 0;
   for (const m of s.movimientos) {
     if (periodoDe(s, m.fecha) !== periodo) continue;
     if (m.tipo === 'ingreso' || (m.tipo === 'cobro' && m.esIngreso)) ingresos += m.valor;
@@ -566,6 +568,24 @@ export function gastoPorCategoria(s, periodo, tipo = '') {
 // ---------- copias y exportación ----------
 // Lleva una copia de la versión 1 (quincenas de calendario) al modelo de pago a pago.
 export function migrar(o) {
+  o = migrarV1(o);
+  const p0 = o?.periodos?.[0];
+  // Datos creados antes de que existiera el ingreso inicial: se toma el ingreso quincenal declarado,
+  // salvo que ya haya un ingreso registrado en esa primera quincena.
+  if (o?.version === VERSION && p0 && typeof p0 === 'object' && p0.ingresoInicial === undefined && o.config?.setupDone) {
+    const sig = o.periodos[1]?.inicio;
+    const hay = (o.movimientos || []).some((m) => m.tipo === 'ingreso' && (!sig || m.fecha < sig));
+    p0.ingresoInicial = hay ? 0 : (o.config.ingresoQuincenal || 0);
+  }
+  return o;
+}
+export function fijarIngresoInicial(s, periodo, valor) {
+  const p = s.periodos.find((x) => x.id === periodo);
+  if (!p) throw new Error('Esa quincena no existe.');
+  if (!(Number.isInteger(valor) && valor >= 0)) throw new Error('El valor no es válido.');
+  p.ingresoInicial = valor;
+}
+function migrarV1(o) {
   if (!o || o.version !== 1 || !Array.isArray(o.periodos)) return o;
   const viejo = (p) => {
     if (typeof p !== 'string' || !/^\d{4}-\d{2}-[AB]$/.test(p)) return null;
