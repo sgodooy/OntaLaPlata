@@ -25,6 +25,37 @@ const n = (t) => parseInt(t.replace(/[^\d-]/g, ''), 10);
   assert.match(await p.textContent('#chequeo'), /Sobran \$257\.000/);
   await p.click('#setup > button.btn');
   await p.waitForSelector('#libre');
+  // la primera vez aparece el recorrido guiado y tapa la app
+  await p.waitForSelector('.tour .t-carta');
+  assert.match(await p.textContent('.t-carta'), /1 de 10/);
+  await p.click('.t-carta [data-t=sig]');
+  assert.match(await p.textContent('.t-carta'), /¿Onta la plata\?/);
+  const caja = async (s) => p.locator(s).boundingBox();
+  const aro = await caja('.t-aro'), heroe = await caja('.heroe'), carta = await caja('.t-carta');
+  assert.ok(Math.abs(aro.x - (heroe.x - 6)) < 2 && Math.abs(aro.height - (heroe.height + 12)) < 2, 'el aro rodea el resumen');
+  assert.ok(carta.y >= aro.y + aro.height || carta.y + carta.height <= aro.y, 'la carta no tapa lo que explica');
+  if (SHOTS) { await p.waitForTimeout(300); await p.screenshot({ path: SHOTS + '/7-recorrido.png' }); }
+  await p.click('.t-carta [data-t=sig]'); await p.click('.t-carta [data-t=atras]');
+  assert.match(await p.textContent('.t-carta'), /2 de 10/);
+  for (let k = 0; k < 2; k++) await p.click('.t-carta [data-t=sig]');
+  assert.match(await p.textContent('.t-carta'), /Anote todo aquí/);
+  if (SHOTS) { await p.waitForTimeout(300); await p.screenshot({ path: SHOTS + '/8-recorrido-boton.png' }); }
+  for (let k = 0; k < 5; k++) {
+    await p.click('.t-carta [data-t=sig]');
+    const c = await caja('.t-carta');
+    assert.ok(c.x >= 0 && c.y >= 0 && c.x + c.width <= 390 && c.y + c.height <= 844, 'la carta cabe en la pantalla');
+  }
+  await p.click('.t-carta [data-t=sig]');
+  assert.match(await p.textContent('.t-carta'), /10 de 10/);
+  await p.click('.t-carta [data-t=sig]');
+  await p.waitForSelector('.tour', { state: 'detached' });
+  await p.waitForSelector('#hoja input[name=valor]'); // termina abriendo el registro del primer movimiento
+  await p.click('#hoja .cerrar');
+  await p.reload(); await p.waitForSelector('#libre'); await p.waitForTimeout(200);
+  assert.equal(await p.locator('.tour').count(), 0, 'el recorrido no se repite');
+  await p.goto(URL + '#ajustes'); await p.click('[data-a=recorrido]');
+  await p.waitForSelector('.tour'); await p.click('.t-carta [data-t=saltar]');
+  assert.equal(await p.locator('.tour').count(), 0);
   const t0 = await leer();
   assert.equal(t0.cuentas, 560000);
   assert.equal(t0.libre + t0.dueno, t0.cuentas);

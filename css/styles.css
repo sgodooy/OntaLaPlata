@@ -150,3 +150,18 @@ body.sin-nav .nav, body.sin-nav .fab, body.sin-nav .engranaje { display: none; }
   .aviso { bottom: 30px; }
 }
 @media (prefers-reduced-motion: no-preference) { .hoja { animation: sube .18s ease-out; } @keyframes sube { from { transform: translateY(30px); opacity: .4; } } }
+
+/* recorrido guiado */
+.tour { position: fixed; inset: 0; z-index: 40; }
+/* Los velos desenfocan; la sombra del aro oscurece todo lo demás respetando las esquinas redondeadas. */
+.t-velo { position: fixed; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+.t-sin-foco .t-velo { background: rgba(31, 26, 22, .6); }
+.t-aro { position: fixed; box-shadow: 0 0 0 3px var(--mostaza), 0 0 0 8px rgba(224, 165, 38, .35), 0 0 0 200vmax rgba(31, 26, 22, .6); }
+.t-carta { position: fixed; background: var(--papel); border-radius: 18px; padding: 20px 16px 14px; box-shadow: 0 10px 30px rgba(0, 0, 0, .35); overflow: hidden; }
+.t-carta::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 6px; background: linear-gradient(90deg, var(--mostaza) 0 20%, var(--terra) 20% 40%, var(--cielo) 40% 60%, var(--verde2) 60% 80%, var(--crema) 80%); }
+.t-carta.t-centro { left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(340px, calc(100vw - 24px)); }
+.t-carta h3 { color: var(--verde); font-size: 1.1rem; text-transform: uppercase; margin: 2px 0 6px; }
+.t-carta p { margin: 0 0 12px; }
+.t-paso { font-family: var(--titulos); font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; color: var(--gris); }
+.t-botones { display: flex; align-items: center; gap: 8px; } .t-botones span { flex: 1; }
+@media (prefers-reduced-motion: no-preference) { .t-carta { transition: left .2s, top .2s; } }

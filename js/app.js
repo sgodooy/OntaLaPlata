@@ -1,5 +1,6 @@
 import * as C from './core.js';
 import * as DB from './db.js';
+import { iniciarTour, tourActivo } from './tour.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -71,6 +72,8 @@ function render() {
   const v = { setup: vSetup, inicio: vInicio, movimientos: vMovimientos, presupuestos: vPresupuestos, reservas: vReservas, analisis: vAnalisis, cuentas: vCuentas, ajustes: vAjustes }[ruta] || vInicio;
   $('#vista').innerHTML = (ui.revision ? `<div class="banda ok"><span><b>Modo revisión.</b> Está viendo una copia de seguridad, sin poder cambiarla.</span><button class="btn mini" data-a="salir-revision">Salir</button></div>` : '') + v();
   if (setup) chequeoSetup();
+  // Primera vez con la app ya configurada: se muestra el recorrido guiado.
+  else if (ruta === 'inicio' && !state.config.tourVisto && !ui.revision && !tourActivo()) recorrido();
 }
 
 function filaReserva(r) {
@@ -285,7 +288,29 @@ function vAjustes() {
     <div class="botones"><button class="btn sec" data-a="csv-movs">Movimientos en CSV</button><button class="btn sec" data-a="csv-pres">Presupuestos en CSV</button></div>
     <div class="botones"><button class="btn sec" data-a="revision">Revisar una copia (solo lectura)</button></div>
     <div class="botones ed"><button class="btn sec" data-a="restaurar">Restaurar una copia</button><button class="btn peligro" data-a="borrar-todo">Borrar todo</button></div></div>
+    <h2>Ayuda</h2><div class="tarjeta"><button class="btn sec ancho" data-a="recorrido">Ver el recorrido otra vez</button></div>
     <p class="suave">Para revisar en el computador: descargue la copia en el celular, pásela al computador y ábrala con «Revisar una copia».</p></div></div>`;
+}
+
+// ---------- recorrido guiado ----------
+const PASOS = [
+  { titulo: '¡Quiubo pues!', texto: 'Le muestro la app en menos de un minuto. Puede saltarse el recorrido y volver a verlo cuando quiera desde Ajustes.', boton: 'Empecemos' },
+  { sel: '.heroe', titulo: '¿Onta la plata?', texto: 'Este número es su plata libre: lo que hay en sus cuentas menos lo que ya tiene dueño. Si sale en rojo, le está faltando para cubrir lo comprometido.' },
+  { sel: '.ritmo', titulo: 'Su ritmo diario', texto: 'Cuánto puede gastar por día para llegar sin afanes al final de la quincena.' },
+  { sel: '#fab', titulo: 'Anote todo aquí', texto: 'Escriba el valor, toque la categoría y guarde. El mismo botón sirve para ingresos, transferencias entre sus cuentas, préstamos y las veces que le invitan algo.' },
+  { sel: '#nav a[data-r=presupuestos]', titulo: 'Presupuestos', texto: 'Cuánto tenía, cuánto gastó y cuánto le queda en cada categoría. En comida le cuento cuántos almuerzos le quedan.' },
+  { sel: '#nav a[data-r=reservas]', titulo: 'Esa platica ya tiene dueño', texto: 'Arriendo, servicios y suscripciones. Reservar aparta la plata sin sacarla de la cuenta, y al pagar desde aquí se descuenta una sola vez. También puede anotar lo que le deben.' },
+  { sel: '#nav a[data-r=movimientos]', titulo: 'Movimientos', texto: 'Todo lo que ha anotado, con buscador y filtros. Toque cualquier movimiento para corregirlo o eliminarlo.' },
+  { sel: '#nav a[data-r=analisis]', titulo: 'Análisis', texto: 'Los gráficos de cada quincena y los créditos finales de cada capítulo: en qué se pasó y en qué le sobró.' },
+  { sel: '#btn-ajustes', titulo: 'Ajustes y copia de seguridad', texto: 'Sus datos viven solo en este dispositivo. Descargue una copia de vez en cuando y, en el iPhone, agregue la app a la pantalla de inicio desde el botón Compartir.' },
+  { titulo: '¡Listo, a llevar las cuentas claras!', texto: 'Empiece por anotar su primer movimiento: el sueldo que le entró o lo último que gastó.', boton: 'Registrar mi primer movimiento', accion: 'primer' },
+];
+function recorrido() {
+  cerrarHoja();
+  iniciarTour(PASOS, async (resultado) => {
+    if (!state.config.tourVisto && !ui.revision) await commit(() => { state.config.tourVisto = true; });
+    if (resultado === 'primer' && !ui.revision) hojaMov('gasto');
+  });
 }
 
 // ---------- configuración inicial ----------
@@ -468,6 +493,7 @@ const acciones = {
   'nueva-cuenta': () => abrirHoja('Nueva cuenta', `<form data-form="cuenta"><input type="hidden" name="id" value="">${campo('Nombre', '<input name="nombre" maxlength="40" required>')}${campo('Saldo de hoy', inMonto('saldo'))}<button class="btn ancho">Crear</button></form>`),
   'ed-cuenta': (el) => { const c = C.cuenta(state, el.dataset.id); abrirHoja('Renombrar cuenta', `<form data-form="cuenta"><input type="hidden" name="id" value="${c.id}">${campo('Nombre', `<input name="nombre" value="${esc(c.nombre)}" maxlength="40" required>`)}<button class="btn ancho">Guardar</button></form>`); },
   'quitar-cuenta': (el) => { if (confirm('¿Quitar esta cuenta? Si tiene movimientos se archiva para conservar el historial.')) commit(() => C.quitarCuenta(state, el.dataset.id), 'Cuenta quitada.'); },
+  recorrido: () => { if (ui.ruta !== 'inicio') { ui.ruta = 'inicio'; history.replaceState(null, '', '#inicio'); render(); } window.scrollTo(0, 0); recorrido(); },
   cuadre: hojaCuadre,
   'abrir-periodo': hojaAbrir,
   copia: hacerCopia,
