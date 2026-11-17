@@ -3,7 +3,7 @@ import * as DB from './db.js';
 import { iniciarTour, tourActivo } from './tour.js';
 import * as FX from './efectos.js';
 
-const VERSION_APP = 15; // sube con cada publicación; se muestra en Ajustes
+const VERSION_APP = 16; // sube con cada publicación; se muestra en Ajustes
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -313,10 +313,13 @@ function vAnalisis() {
       <div class="suave">${p.pct.toFixed(1).replace('.', ',')} % · ${p.exceso ? `se pasó por ${f$(p.exceso)}` : `quedan ${f$(p.resta)}`}</div></div>`).join('') || '<div class="vacio">Sin presupuestos en esta quincena.</div>'}</div>`;
   const tipos = [['', 'Todo'], ['habitual', 'Habituales'], ['social', 'Sociales'], ['antojo', 'Antojos'], ['extraordinario', 'Extraordinarios'], ['fijo', 'Fijos']];
   const gc = C.gastoPorCategoria(state, per, ui.tipoAna);
-  const max2 = Math.max(1, ...gc.map((g) => g.valor)); const tot2 = gc.reduce((a, g) => a + g.valor, 0);
+  // Cada barra es la parte que esa categoría se llevó de todo lo gastado en la quincena: la barra completa es el 100 %.
+  const tot2 = gc.reduce((a, g) => a + g.valor, 0), totQ = Math.max(1, C.capitulo(state, per).gastos);
+  const parte = (v) => `${((v / totQ) * 100).toFixed(1).replace('.', ',')} %`;
   h += `<h2>Gastos por categoría</h2><div class="tarjeta"><div class="tabs" style="margin:0 0 8px;padding:0">${tipos.map(([id, n]) => `<button data-a="tipo-ana" data-t="${id}" class="${ui.tipoAna === id ? 'activa' : ''}">${n}</button>`).join('')}</div>
-    ${gc.map((g) => `<div class="g-fila"><div class="cab"><span>${esc(g.nombre)}</span><span class="num">${f$(g.valor)}</span></div><div class="g-barra"><i style="width:${(g.valor / max2) * 100}%"></i></div></div>`).join('') || '<div class="vacio">Sin gastos de este tipo.</div>'}
-    ${gc.length ? `<div class="fila"><b>Total</b>${num(tot2)}</div>` : ''}</div>`;
+    <p class="suave">La barra completa es todo lo que gastó en la quincena (${f$(totQ === 1 ? 0 : totQ)}); cada una muestra la parte que se llevó esa categoría.</p>
+    ${gc.map((g) => `<div class="g-fila"><div class="cab"><span>${esc(g.nombre)}</span><span><span class="num">${f$(g.valor)}</span> <span class="suave">· ${parte(g.valor)}</span></span></div><div class="barra"><i style="width:${Math.min(100, (g.valor / totQ) * 100)}%"></i></div></div>`).join('') || '<div class="vacio">Sin gastos de este tipo.</div>'}
+    ${gc.length ? `<div class="fila"><b>Total${ui.tipoAna ? ' de este tipo' : ''}</b><span>${num(tot2)} <span class="suave">· ${parte(tot2)}</span></span></div>` : ''}</div>`;
   h += '</div><div>';
   const pers = C.periodosConDatos(state).filter((p) => p <= per).slice(-6);
   const tots = pers.map((p) => C.capitulo(state, p).gastos); const max3 = Math.max(1, ...tots);
