@@ -148,6 +148,21 @@ const n = (t) => parseInt(t.replace(/[^\d-]/g, ''), 10);
   await va('movimientos'); await q.fill('[data-f=q]', 'amigo');
   assert.equal(await q.locator('#lista-movs button.fila').count(), 2);
   await q.fill('[data-f=q]', '');
+  // varias categorías a la vez
+  const filas = () => q.locator('#lista-movs button.fila').count();
+  const todas = await filas();
+  await q.click('.filtro-cats summary');
+  await q.locator('.filtro-cats label.chip', { hasText: 'Almuerzos' }).click();
+  const soloAlm = await filas();
+  await q.locator('.filtro-cats label.chip', { hasText: 'Gastos fijos' }).click();
+  const conFijos = await filas();
+  assert.ok(soloAlm >= 1 && conFijos === soloAlm + 1 && conFijos < todas, `filtro de categorías: ${soloAlm}, ${conFijos}, ${todas}`);
+  assert.match(await q.textContent('#resumen-cats'), /Categorías \(2\): Almuerzos, Gastos fijos/);
+  await q.locator('.filtro-cats label.chip', { hasText: 'Almuerzos' }).click();
+  assert.equal(await filas(), 1);
+  await q.click('[data-a=limpiar-filtros]');
+  assert.equal(await filas(), todas);
+  assert.match(await q.textContent('#resumen-cats'), /todas/);
   // un filtro de fecha que deja la lista vacía se puede quitar desde ahí mismo
   await q.fill('[data-f=desde]', '2030-01-01');
   assert.equal(await q.locator('#lista-movs button.fila').count(), 0);

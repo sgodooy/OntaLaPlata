@@ -2,7 +2,7 @@ import * as C from './core.js';
 import * as DB from './db.js';
 import { iniciarTour, tourActivo } from './tour.js';
 
-const VERSION_APP = 7; // sube con cada publicación; se muestra en Ajustes
+const VERSION_APP = 8; // sube con cada publicación; se muestra en Ajustes
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -12,7 +12,9 @@ const miles = (n) => (n ? String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '.') : '');
 
 let state = null;      // datos que se están mostrando
 let propio = null;     // datos del dispositivo mientras se revisa una copia
-const ui = { ruta: 'inicio', revision: false, filtros: { q: '', periodo: '', cat: '', cuenta: '', tipo: '', desde: '', hasta: '' }, perPres: null, perAna: null, tipoAna: '', archivo: '' };
+const FIJOS = '__fijos'; // en el filtro de categorías, los pagos de reservas
+const filtrosVacios = () => ({ q: '', periodo: '', cats: [], cuenta: '', tipo: '', desde: '', hasta: '' });
+const ui = { ruta: 'inicio', revision: false, filtros: filtrosVacios(), perPres: null, perAna: null, tipoAna: '', archivo: '' };
 
 // ---------- infraestructura ----------
 let tAviso;
@@ -144,14 +146,14 @@ function listaMovs() {
   const l = state.movimientos.filter((m) => {
     if (f.tipo && m.tipo !== f.tipo) return false;
     if (f.cuenta && m.cuentaId !== f.cuenta && m.cuentaDestinoId !== f.cuenta) return false;
-    if (f.cat && m.categoriaId !== f.cat) return false;
+    if (f.cats.length && !f.cats.includes(m.reservaId ? FIJOS : m.categoriaId)) return false;
     if (f.periodo && C.periodoDe(state, m.fecha) !== f.periodo) return false;
     if (f.desde && m.fecha < f.desde) return false;
     if (f.hasta && m.fecha > f.hasta) return false;
     if (q && !`${m.descripcion} ${m.nota} ${m.persona || ''} ${C.categoria(state, m.categoriaId)?.nombre || ''}`.toLowerCase().includes(q)) return false;
     return true;
   }).sort((a, b) => b.fecha.localeCompare(a.fecha) || (b.creado || '').localeCompare(a.creado || ''));
-  const quitar = Object.values(f).some(Boolean) ? ' <button class="enlace" data-a="limpiar-filtros">Quitar filtros</button>' : '';
+  const quitar = Object.values(f).some((v) => (Array.isArray(v) ? v.length : v)) ? ' <button class="enlace" data-a="limpiar-filtros">Quitar filtros</button>' : '';
   if (!l.length) return `<div class="vacio">${state.movimientos.length ? `Ningún movimiento coincide con los filtros.<br>${quitar}` : 'Todavía no hay movimientos. Toque el botón + para registrar el primero.'}</div>`;
   let h = '', dia = '';
   const gastos = l.filter((m) => m.tipo === 'gasto').reduce((a, m) => a + m.valor, 0);
@@ -162,6 +164,12 @@ function listaMovs() {
   }
   return h + '</div>';
 }
+const catsFiltro = () => state.categorias.map((c) => ({ id: c.id, nombre: c.nombre })).concat({ id: FIJOS, nombre: 'Gastos fijos (reservas)' });
+function resumenCats() {
+  const n = catsFiltro().filter((c) => ui.filtros.cats.includes(c.id)).map((c) => c.nombre);
+  if (!n.length) return 'Categorías: todas';
+  return `Categorías (${n.length}): ${esc(n.slice(0, 2).join(', '))}${n.length > 2 ? ` y ${n.length - 2} más` : ''}`;
+}
 function vMovimientos() {
   const f = ui.filtros;
   const op = (lista, sel) => lista.map((x) => `<option value="${esc(x.id)}" ${x.id === sel ? 'selected' : ''}>${esc(x.nombre)}</option>`).join('');
@@ -169,10 +177,10 @@ function vMovimientos() {
     <input class="entrada todo" type="search" placeholder="Buscar por descripción" value="${esc(f.q)}" data-f="q" aria-label="Buscar">
     <select class="entrada" data-f="periodo" aria-label="Quincena"><option value="">Todas las quincenas</option>${C.periodosConDatos(state).reverse().map((p) => `<option value="${p}" ${p === f.periodo ? 'selected' : ''}>${C.nombrePeriodo(state, p)}</option>`).join('')}</select>
     <select class="entrada" data-f="tipo" aria-label="Tipo"><option value="">Todos los tipos</option>${op(C.TIPOS.map((t) => ({ id: t, nombre: C.NOMBRE_TIPO[t] })), f.tipo)}</select>
-    <select class="entrada" data-f="cat" aria-label="Categoría"><option value="">Todas las categorías</option>${op(state.categorias, f.cat)}</select>
-    <select class="entrada" data-f="cuenta" aria-label="Cuenta"><option value="">Todas las cuentas</option>${op(state.cuentas, f.cuenta)}</select>
+    <select class="entrada todo" data-f="cuenta" aria-label="Cuenta"><option value="">Todas las cuentas</option>${op(state.cuentas, f.cuenta)}</select>
     <label>Desde<input class="entrada" type="date" data-f="desde" value="${f.desde}"></label>
     <label>Hasta<input class="entrada" type="date" data-f="hasta" value="${f.hasta}"></label>
+    <details class="todo filtro-cats"><summary id="resumen-cats">${resumenCats()}</summary><div class="chips">${catsFiltro().map((c) => `<label class="chip"><input type="checkbox" data-fc="${esc(c.id)}" ${f.cats.includes(c.id) ? 'checked' : ''}><span>${esc(c.nombre)}</span></label>`).join('')}</div></details>
   </div><div id="lista-movs">${listaMovs()}</div>`;
 }
 
@@ -536,13 +544,13 @@ const acciones = {
   'archivar-cat': (el) => { if (confirm('¿Archivar esta categoría? Sus movimientos se conservan.')) commit(() => { C.categoria(state, el.dataset.id).archivada = true; state.presupuestos = state.presupuestos.filter((p) => !(p.categoriaId === el.dataset.id && p.periodo >= P())); }); },
   'nueva-cat': () => abrirHoja('Nueva categoría', `<form data-form="cat">${campo('Nombre', '<input name="nombre" maxlength="50" required>')}${campo('Tipo de gasto', '<select name="tipo"><option>habitual</option><option>social</option><option>antojo</option><option>extraordinario</option></select>')}${campo('Presupuesto de esta quincena (opcional)', inMonto('monto'))}<button class="btn ancho">Crear</button></form>`),
   'tipo-ana': (el) => { ui.tipoAna = el.dataset.t; render(); },
-  'ver-cuenta': (el) => { ui.filtros = { q: '', periodo: '', cat: '', cuenta: el.dataset.id, tipo: '', desde: '', hasta: '' }; location.hash = '#movimientos'; },
+  'ver-cuenta': (el) => { ui.filtros = { ...filtrosVacios(), cuenta: el.dataset.id }; location.hash = '#movimientos'; },
   'nueva-cuenta': () => abrirHoja('Nueva cuenta', `<form data-form="cuenta"><input type="hidden" name="id" value="">${campo('Nombre', '<input name="nombre" maxlength="40" required>')}${campo('Saldo de hoy', inMonto('saldo'))}<button class="btn ancho">Crear</button></form>`),
   'ed-cuenta': (el) => { const c = C.cuenta(state, el.dataset.id); abrirHoja('Renombrar cuenta', `<form data-form="cuenta"><input type="hidden" name="id" value="${c.id}">${campo('Nombre', `<input name="nombre" value="${esc(c.nombre)}" maxlength="40" required>`)}<button class="btn ancho">Guardar</button></form>`); },
   'quitar-cuenta': (el) => { if (confirm('¿Quitar esta cuenta? Si tiene movimientos se archiva para conservar el historial.')) commit(() => C.quitarCuenta(state, el.dataset.id), 'Cuenta quitada.'); },
   recorrido: () => { if (ui.ruta !== 'inicio') { ui.ruta = 'inicio'; history.replaceState(null, '', '#inicio'); render(); } window.scrollTo(0, 0); recorrido(); },
   cuadre: hojaCuadre,
-  'limpiar-filtros': () => { ui.filtros = { q: '', periodo: '', cat: '', cuenta: '', tipo: '', desde: '', hasta: '' }; render(); },
+  'limpiar-filtros': () => { ui.filtros = filtrosVacios(); render(); },
   actualizar: async () => {
     aviso('Buscando la versión más nueva…');
     try {
@@ -661,6 +669,11 @@ document.addEventListener('input', (e) => {
   const t = e.target;
   if (t.classList.contains('monto')) t.value = miles(C.parseMonto(t.value));
   if (t.dataset.f) { ui.filtros[t.dataset.f] = t.value; $('#lista-movs').innerHTML = listaMovs(); }
+  if (t.dataset.fc) {
+    const c = ui.filtros.cats, id = t.dataset.fc;
+    ui.filtros.cats = t.checked ? [...c, id] : c.filter((x) => x !== id);
+    $('#lista-movs').innerHTML = listaMovs(); $('#resumen-cats').innerHTML = resumenCats();
+  }
   if (t.closest('#setup')) chequeoSetup();
 });
 document.addEventListener('change', (e) => {

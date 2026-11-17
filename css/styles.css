@@ -189,5 +189,9 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; min-height: 
 .filtros > *, .dos > *, .cal-mes > * { min-width: 0; }
 @media (max-width: 359px) { .cal-sem, .cal-mes { gap: 2px; } .cal-dia { border-radius: 9px; } }
 
-.filtros label { font-size: .72rem; font-weight: 700; color: var(--gris); text-transform: uppercase; letter-spacing: .04em; }
-.filtros label .entrada { margin-top: 3px; }
+.filtros > label { font-size: .72rem; font-weight: 700; color: var(--gris); text-transform: uppercase; letter-spacing: .04em; }
+.filtros > label .entrada { margin-top: 3px; }
+
+.filtro-cats { margin: 0; border: 1.5px solid var(--linea); border-radius: 12px; background: var(--papel); padding: 0 10px; }
+.filtro-cats summary { padding: 9px 0; font-size: .9rem; font-weight: 600; color: var(--tinta); }
+.filtro-cats .chips { padding: 2px 0 10px; } .filtro-cats .chip span { padding: 7px 10px; font-size: .85rem; }
