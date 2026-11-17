@@ -2,14 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as C from '../js/core.js';
 
-const HOY = '2026-11-17'; // quincena 2026-11-B
-const P = '2026-11-B';
+const HOY = '2026-11-17';
+const P = '2026-11-15'; // la quincena empezó con el pago del 15
 
 function base() {
   const s = C.estadoInicial();
   const sal = {}; [500000, 20000, 30000, 10000].forEach((v, i) => { sal[s.cuentas[i].id] = v; });
   const alm = s.categorias.find((c) => c.nombre === 'Almuerzos');
-  C.configurar(s, { saldos: sal, ingreso: 1000000, tasa: 4000, presupuestos: { [alm.id]: 225000 } }, HOY);
+  C.configurar(s, { saldos: sal, ingreso: 1000000, tasa: 4000, presupuestos: { [alm.id]: 225000 }, inicio: P }, HOY);
   const [banco, nequi, nu] = s.cuentas;
   return { s, banco, nequi, nu, alm };
 }
@@ -119,20 +119,38 @@ test('7. prestar no es gasto y cobrar el préstamo no es ingreso', () => {
   assert.equal(inv(s).ingresosPeriodo, 20000);
 });
 
-test('8. un ingreso para la quincena siguiente sube el saldo y no el libre', () => {
-  const { s, banco } = base();
-  const antes = inv(s);
-  C.agregarMovimiento(s, { tipo: 'ingreso', valor: 1000000, fecha: '2026-11-30', cuentaId: banco.id, periodo: '2026-12-A' });
-  const r = inv(s);
-  assert.equal(r.enCuentas, antes.enCuentas + 1000000);
-  assert.equal(r.libre, antes.libre);
-  assert.equal(r.ingresosPeriodo, 0);
-  // al empezar esa quincena, la plata ya cuenta
-  const dic = C.resumen(s, '2026-12-01');
-  assert.equal(dic.futuro, 0); assert.equal(dic.ingresosPeriodo, 1000000);
-  assert.equal(C.sugerirPeriodoIngreso('2026-11-30'), '2026-12-A');
-  assert.equal(C.sugerirPeriodoIngreso('2026-11-15'), '2026-11-B');
-  assert.equal(C.sugerirPeriodoIngreso('2027-02-28'), '2027-03-A');
+test('8. el pago abre una quincena nueva, aunque llegue antes o después del día 15', () => {
+  const { s, banco, alm } = base();
+  C.agregarMovimiento(s, { tipo: 'gasto', valor: 15000, fecha: '2026-11-27', cuentaId: banco.id, categoriaId: alm.id });
+  assert.equal(C.sugerirNuevaQuincena(s, '2026-11-20'), false);
+  assert.equal(C.sugerirNuevaQuincena(s, '2026-11-28'), true);
+  // pago adelantado, el 28
+  C.abrirPeriodo(s, '2026-11-28');
+  C.agregarMovimiento(s, { tipo: 'ingreso', valor: 1000000, fecha: '2026-11-28', cuentaId: banco.id });
+  C.agregarMovimiento(s, { tipo: 'gasto', valor: 20000, fecha: '2026-11-28', cuentaId: banco.id, categoriaId: alm.id });
+  assert.equal(C.nombrePeriodo(s, P), '15 nov al 27 nov 2026');
+  assert.equal(C.presupuestosDe(s, P)[0].gastado, 15000); // lo del 27 queda en la quincena vieja
+  const r = C.resumen(s, '2026-11-28');
+  assert.equal(r.periodo, '2026-11-28'); assert.equal(r.ingresosPeriodo, 1000000); assert.equal(r.gastosPeriodo, 20000);
+  assert.equal(r.libre + r.conDueno, r.enCuentas);
+  const nuevas = s.reservas.filter((x) => x.periodo === '2026-11-28').map((x) => `${x.nombre} ${x.vence}`).sort();
+  assert.deepEqual(nuevas, ['Arriendo 2026-11-28', 'Servicios públicos 2026-12-10']); // del 30 nov al 12 dic solo vence servicios
+  assert.throws(() => C.abrirPeriodo(s, '2026-11-28')); assert.throws(() => C.abrirPeriodo(s, '2026-11-20'));
+});
+
+test('si el pago se atrasa, la quincena sigue abierta y no se duplican obligaciones', () => {
+  const { s } = base();
+  assert.equal(C.resumen(s, '2026-11-29').atrasado, false);
+  assert.equal(C.ponerAlDia(s, '2026-12-10'), true);
+  const r = C.resumen(s, '2026-12-10');
+  assert.equal(r.periodo, P); assert.equal(r.atrasado, true); assert.equal(r.diasRestantes, 1);
+  assert.equal(r.reservasPend, 470000 + 100000); // servicios venció el 10 mientras esperaba el pago
+  assert.equal(C.ponerAlDia(s, '2026-12-10'), false);
+  C.abrirPeriodo(s, '2026-12-11');
+  assert.equal(s.reservas.filter((x) => x.nombre === 'Servicios públicos').length, 1);
+  const nuevas = s.reservas.filter((x) => x.periodo === '2026-12-11').map((x) => `${x.nombre} ${x.vence}`).sort();
+  assert.deepEqual(nuevas, ['Arriendo 2026-12-11', 'Celular e internet 2026-12-16', 'Suscripción en dólares 2026-12-20']);
+  assert.equal(C.nombrePeriodo(s, P), '15 nov al 10 dic 2026');
 });
 
 test('9. editar y eliminar movimientos recalcula todo', () => {
@@ -167,32 +185,52 @@ test('11. una copia de seguridad se restaura idéntica', () => {
   assert.throws(() => C.validarEstado({ ...copia, movimientos: [{ tipo: 'gasto', valor: 'x', fecha: HOY }] }));
 });
 
-test('quincenas: límites, febrero y obligaciones mensuales completas', () => {
-  assert.equal(C.periodoDe('2026-11-14'), '2026-11-A');
-  assert.equal(C.periodoDe('2026-11-15'), '2026-11-B');
-  assert.deepEqual(C.rangoPeriodo('2027-02-B'), { inicio: '2027-02-15', fin: '2027-02-28' });
-  assert.equal(C.periodoSiguiente('2026-12-B'), '2027-01-A');
-  assert.equal(C.periodoAnterior('2027-01-A'), '2026-12-B');
-  const { s } = base();
-  const a = C.reservasParaPeriodo(s.obligaciones, '2026-12-A', 4000).map((r) => r.nombre);
-  const b = C.reservasParaPeriodo(s.obligaciones, '2026-12-B', 4000).map((r) => r.nombre);
-  assert.deepEqual(a, ['Arriendo', 'Servicios públicos']);
-  assert.deepEqual(b, ['Arriendo', 'Celular e internet', 'Suscripción en dólares']);
-});
-
-test('abrir quincena: copia presupuestos, genera reservas y arrastra sobrantes si se pide', () => {
+test('abrir quincena: copia presupuestos, arrastra sobrantes si se pide y se puede deshacer', () => {
   const { s, banco, alm } = base();
   C.agregarMovimiento(s, { tipo: 'gasto', valor: 24000, fecha: HOY, cuentaId: banco.id, categoriaId: alm.id });
-  C.abrirPeriodo(s, '2026-12-A', { arrastrar: true });
-  C.abrirPeriodo(s, '2026-12-A', { arrastrar: true }); // repetir no duplica
-  const p = C.presupuestosDe(s, '2026-12-A');
+  C.abrirPeriodo(s, '2026-11-30', { arrastrar: true });
+  const p = C.presupuestosDe(s, '2026-11-30');
   assert.equal(p.length, 1); assert.equal(p[0].monto, 225000); assert.equal(p[0].total, 426000);
-  assert.equal(s.reservas.filter((r) => r.periodo === '2026-12-A').length, 2);
-  C.abrirPeriodo(s, '2026-12-B');
-  assert.equal(C.presupuestosDe(s, '2026-12-B')[0].total, 225000); // el arrastre no se hereda
-  // las reservas vencidas y sin pagar siguen contando
-  assert.ok(C.resumen(s, '2026-12-01').reservasPend >= 470000);
+  C.abrirPeriodo(s, '2026-12-15');
+  assert.equal(C.presupuestosDe(s, '2026-12-15')[0].total, 225000); // el arrastre no se hereda
+  assert.ok(C.resumen(s, '2026-12-15').reservasPend >= 470000); // lo vencido y sin pagar sigue contando
   assert.equal(C.presupuestosDe(s, P)[0].gastado, 24000); // el historial se conserva
+  const antes = s.reservas.length;
+  C.deshacerPeriodo(s);
+  assert.equal(s.periodos.length, 2); assert.equal(C.presupuestosDe(s, '2026-12-15').length, 0);
+  assert.ok(s.reservas.length < antes);
+  assert.equal(C.periodoDe(s, '2026-12-20'), '2026-11-30');
+  assert.equal(C.periodoDe(s, '2026-01-01'), P); // lo anterior al primer pago cuenta en la primera quincena
+});
+
+test('calendario: reservas, obligaciones previstas y días de pago', () => {
+  const { s, banco } = base();
+  C.pagarReserva(s, s.reservas.find((x) => x.nombre === 'Arriendo').id, { cuentaId: banco.id, valor: 350000, fecha: HOY });
+  const nov = C.agenda(s, 2026, 11, HOY);
+  assert.deepEqual(nov['2026-11-15'].map((x) => x.clase).sort(), ['pagada', 'pago']);
+  assert.equal(nov['2026-11-16'][0].clase, 'vencida'); assert.equal(nov['2026-11-20'][0].clase, 'pendiente');
+  const dic = C.agenda(s, 2026, 12, HOY);
+  assert.deepEqual(Object.keys(dic).sort(), ['2026-12-10', '2026-12-16', '2026-12-20']);
+  assert.ok(Object.values(dic).flat().every((x) => x.clase === 'previsto'));
+  // una obligación nueva dentro de la quincena vigente queda reservada de una vez
+  const antes = C.resumen(s, HOY).libre;
+  C.guardarObligacion(s, { nombre: 'Gimnasio', monto: 60000, frecuencia: 'mensual', dia: 25 }, HOY);
+  assert.equal(C.agenda(s, 2026, 11, HOY)['2026-11-25'][0].clase, 'pendiente');
+  assert.equal(C.resumen(s, HOY).libre, antes - 60000);
+  assert.equal(new Date(Date.UTC(2027, 1, 28)).getUTCDate(), 28);
+  assert.equal(C.agenda(s, 2027, 2, HOY)['2027-02-25'][0].nombre, 'Gimnasio');
+});
+
+test('una copia de la versión anterior se convierte al modelo de pago a pago', () => {
+  const { s } = base();
+  const v1 = JSON.parse(JSON.stringify(s));
+  v1.version = 1; v1.periodos = ['2026-11-B'];
+  for (const x of v1.presupuestos) x.periodo = '2026-11-B';
+  for (const x of v1.reservas) x.periodo = '2026-11-B';
+  const m = C.validarEstado(v1);
+  assert.equal(m.version, 2);
+  assert.deepEqual(m.periodos, [{ id: '2026-11-15', inicio: '2026-11-15', cubierto: '2026-11-30' }]);
+  assert.equal(C.resumen(m, HOY).presupRest, 225000);
 });
 
 test('cambiar un presupuesto deja historial y no toca los movimientos', () => {

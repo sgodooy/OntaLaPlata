@@ -165,3 +165,20 @@ body.sin-nav .nav, body.sin-nav .fab, body.sin-nav .engranaje { display: none; }
 .t-paso { font-family: var(--titulos); font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; color: var(--gris); }
 .t-botones { display: flex; align-items: center; gap: 8px; } .t-botones span { flex: 1; }
 @media (prefers-reduced-motion: no-preference) { .t-carta { transition: left .2s, top .2s; } }
+
+/* calendario de gastos fijos */
+.cal-cab { display: flex; align-items: center; justify-content: space-between; gap: 8px; } .cal-cab h2 { margin: 0; }
+.cal-sem, .cal-mes { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.cal-sem { margin: 12px 0 4px; text-align: center; font-family: var(--titulos); font-size: .72rem; color: var(--gris); }
+.cal-dia { aspect-ratio: 1; min-height: 44px; border: 1.5px solid transparent; border-radius: 12px; background: var(--crema); padding: 4px 0 0; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.cal-dia b { font-family: var(--titulos); font-size: .92rem; font-weight: 600; }
+.cal-dia span { display: flex; gap: 2px; flex-wrap: wrap; justify-content: center; }
+.cal-dia.hoy { border-color: var(--verde); } .cal-dia.sel { background: var(--verde); color: var(--crema); }
+.cal-dia.pago { box-shadow: inset 0 -5px 0 var(--mostaza); }
+.cal-dia span i, .cal-ley i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+i.p-pendiente, i.p-pago { background: var(--mostaza); }
+i.p-pagada { background: var(--verde2); } .cal-dia.sel i.p-pagada { background: var(--cielo); }
+i.p-vencida { background: var(--terra); } i.p-cancelada { background: var(--gris); }
+i.p-previsto { background: none; border: 2px solid var(--gris); } .cal-dia.sel i.p-previsto { border-color: var(--crema); }
+.cal-ley { margin: 12px 0 0; } .cal-ley i { margin-right: 4px; } .cal-ley i.p-pago { border-radius: 2px; height: 5px; width: 12px; vertical-align: 1px; }
+.cal-det { border-top: 1.5px solid var(--linea); margin-top: 12px; }

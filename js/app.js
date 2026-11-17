@@ -43,7 +43,7 @@ function cerrarHoja() { $('#fondo').hidden = true; $('#hoja').innerHTML = ''; }
 const activas = () => state.cuentas.filter((c) => !c.archivada);
 const cats = () => state.categorias.filter((c) => !c.archivada);
 const hoy = () => C.hoy();
-const P = () => C.periodoDe(hoy());
+const P = () => C.periodoDe(state, hoy());
 
 function chips(name, items, sel, { requerido = false } = {}) {
   return `<div class="chips">${items.map((i) => `<label class="chip"><input type="radio" name="${name}" value="${esc(i.id)}" ${i.id === sel ? 'checked' : ''} ${requerido ? 'required' : ''}><span>${esc(i.nombre)}</span></label>`).join('')}</div>`;
@@ -51,7 +51,7 @@ function chips(name, items, sel, { requerido = false } = {}) {
 const campo = (etq, html) => `<label class="campo">${esc(etq)}${html}</label>`;
 const inMonto = (name, v = 0, extra = '') => `<input name="${name}" class="monto" inputmode="numeric" autocomplete="off" value="${miles(v)}" ${extra}>`;
 function selPeriodo(name, sel, lista, vacio) {
-  return `<select name="${name}" class="entrada" data-c="${name}">${vacio ? `<option value="">${vacio}</option>` : ''}${lista.map((p) => `<option value="${p}" ${p === sel ? 'selected' : ''}>${C.nombrePeriodo(p)}</option>`).join('')}</select>`;
+  return `<select name="${name}" class="entrada" data-c="${name}">${vacio ? `<option value="">${vacio}</option>` : ''}${lista.map((p) => `<option value="${p}" ${p === sel ? 'selected' : ''}>${C.nombrePeriodo(state, p)}</option>`).join('')}</select>`;
 }
 function descargar(nombre, texto, tipo) {
   const a = document.createElement('a');
@@ -89,7 +89,7 @@ function vInicio() {
   const sal = C.saldos(state);
   let h = '';
   if (!ui.revision) {
-    if (!state.periodos.includes(r.periodo)) h += `<div class="banda"><span><b>Empezó un capítulo nuevo.</b> Confirme los presupuestos y las reservas de la quincena del ${C.nombrePeriodo(r.periodo)}.</span><button class="btn mini" data-a="abrir-periodo">Abrir</button></div>`;
+    if (r.atrasado) h += `<div class="banda"><span><b>Ya pasaron 15 días desde su último pago.</b> La quincena sigue abierta hasta que le paguen.</span><button class="btn mini" data-a="me-pagaron">Me pagaron</button></div>`;
     const dc = state.config.ultimoCuadre ? C.diasEntre(state.config.ultimoCuadre, hoy()) : 99;
     if (dc >= 7) h += `<div class="banda ok"><span>Hace ${dc} días no cuadra caja. ¿Los saldos sí son los reales?</span><button class="btn mini" data-a="cuadre">Cuadrar</button></div>`;
     const db = state.config.ultimaCopia ? C.diasEntre(state.config.ultimaCopia, hoy()) : null;
@@ -102,12 +102,12 @@ function vInicio() {
     <dt>Con dueño</dt><dd class="num" id="con-dueno">${f$(r.conDueno)}</dd>
     <dt class="hijo">Reservas pendientes</dt><dd class="hijo num">${f$(r.reservasPend)}</dd>
     <dt class="hijo">Presupuestos por gastar</dt><dd class="hijo num">${f$(r.presupRest)}</dd>
-    ${r.futuro ? `<dt class="hijo">De la próxima quincena</dt><dd class="hijo num">${f$(r.futuro)}</dd>` : ''}</dl></section>`;
-  h += `<div class="ritmo">${r.ritmo > 0 ? `Le quedan <span class="num">${f$(r.ritmo)}</span> por día hasta el fin de la quincena (${r.diasRestantes} ${r.diasRestantes === 1 ? 'día' : 'días'}).` : '¡Pilas pues! Ya no queda plata para gastar en esta quincena.'}</div>`;
+    </dl></section>`;
+  h += `<div class="ritmo">${r.ritmo > 0 ? `Le quedan <span class="num">${f$(r.ritmo)}</span> ${r.atrasado ? 'mientras le pagan.' : `por día hasta el próximo pago, calculado para dentro de ${r.diasRestantes} ${r.diasRestantes === 1 ? 'día' : 'días'}.`}` : '¡Pilas pues! Ya no queda plata para gastar en esta quincena.'}</div>`;
   h += '<div class="rejilla"><div>';
   h += `<h2>Mis cuentas <a class="enlace" href="#cuentas">Ver todo</a></h2><div class="tarjeta">${activas().map((c) => `<div class="fila"><div class="nombre">${esc(c.nombre)}</div>${num(sal[c.id])}</div>`).join('')}</div>`;
   const pct = r.presupTotal ? Math.round((r.presupGastado / r.presupTotal) * 100) : 0;
-  h += `<h2>Quincena del ${C.nombrePeriodo(r.periodo)}</h2><div class="tarjeta">
+  h += `<h2>Quincena ${C.nombrePeriodo(state, r.periodo)}</h2><div class="tarjeta">
     <div class="pres"><div class="cab"><span>Presupuesto ${num(r.presupTotal)}</span><span class="num">${pct} %</span></div>
     <div class="barra ${pct > 100 ? 'pasado' : pct >= 80 ? 'alerta' : ''}"><i style="width:${Math.min(100, pct)}%"></i></div>
     <div class="pie"><span>Gastado ${f$(r.presupGastado)}</span><span>Quedan ${f$(r.presupRest)}</span></div></div>
@@ -115,7 +115,7 @@ function vInicio() {
     <div class="fila"><div>Ingresos del periodo</div>${num(r.ingresosPeriodo)}</div></div>`;
   h += '</div><div>';
   const pend = state.reservas.filter((x) => x.estado === 'pendiente').sort((a, b) => a.vence.localeCompare(b.vence)).slice(0, 6);
-  h += `<h2>Próximas obligaciones <a class="enlace" href="#reservas">Ver todo</a></h2><div class="tarjeta">${pend.length ? pend.map(filaReserva).join('') : '<div class="vacio">No hay obligaciones pendientes.</div>'}</div>`;
+  h += `<h2>Próximas obligaciones <a class="enlace" href="#reservas">Calendario</a></h2><div class="tarjeta">${pend.length ? pend.map(filaReserva).join('') : '<div class="vacio">No hay obligaciones pendientes.</div>'}</div>`;
   const deben = state.porCobrar.filter((x) => x.estado === 'pendiente').reduce((a, x) => a + x.valor, 0);
   if (deben) h += `<div class="tarjeta"><div class="fila"><div>Le deben<div class="suave">No cuenta como plata suya hasta que la reciba</div></div>${num(deben)}</div></div>`;
   return h + '</div></div>';
@@ -127,7 +127,7 @@ function filaMov(m) {
   let titulo, det, signo = 0;
   switch (m.tipo) {
     case 'gasto': titulo = m.descripcion || cat || 'Gasto'; det = `${m.reservaId ? 'Pago de reserva' : (cat || 'Sin categoría')} · ${cu}`; signo = -1; break;
-    case 'ingreso': titulo = m.descripcion || 'Ingreso'; det = `Ingreso · ${cu} · para el ${C.nombrePeriodo(m.periodo)}`; signo = 1; break;
+    case 'ingreso': titulo = m.descripcion || 'Ingreso'; det = `Ingreso · ${cu}`; signo = 1; break;
     case 'transferencia': titulo = m.descripcion || 'Transferencia'; det = `${cu} → ${C.cuenta(state, m.cuentaDestinoId)?.nombre}`; break;
     case 'prestamo': titulo = `Le presté a ${m.persona}`; det = `${cu}${m.descripcion ? ' · ' + m.descripcion : ''}`; signo = -1; break;
     case 'cobro': titulo = `Me pagó ${m.persona}`; det = `${cu}${m.esIngreso ? ' · cuenta como ingreso' : ''}`; signo = 1; break;
@@ -143,7 +143,7 @@ function listaMovs() {
     if (f.tipo && m.tipo !== f.tipo) return false;
     if (f.cuenta && m.cuentaId !== f.cuenta && m.cuentaDestinoId !== f.cuenta) return false;
     if (f.cat && m.categoriaId !== f.cat) return false;
-    if (f.periodo && C.periodoDe(m.fecha) !== f.periodo && m.periodo !== f.periodo) return false;
+    if (f.periodo && C.periodoDe(state, m.fecha) !== f.periodo) return false;
     if (f.desde && m.fecha < f.desde) return false;
     if (f.hasta && m.fecha > f.hasta) return false;
     if (q && !`${m.descripcion} ${m.nota} ${m.persona || ''} ${C.categoria(state, m.categoriaId)?.nombre || ''}`.toLowerCase().includes(q)) return false;
@@ -164,7 +164,7 @@ function vMovimientos() {
   const op = (lista, sel) => lista.map((x) => `<option value="${esc(x.id)}" ${x.id === sel ? 'selected' : ''}>${esc(x.nombre)}</option>`).join('');
   return `<div class="filtros">
     <input class="entrada todo" type="search" placeholder="Buscar por descripción" value="${esc(f.q)}" data-f="q" aria-label="Buscar">
-    <select class="entrada" data-f="periodo" aria-label="Quincena"><option value="">Todas las quincenas</option>${C.periodosConDatos(state).reverse().map((p) => `<option value="${p}" ${p === f.periodo ? 'selected' : ''}>${C.nombrePeriodo(p)}</option>`).join('')}</select>
+    <select class="entrada" data-f="periodo" aria-label="Quincena"><option value="">Todas las quincenas</option>${C.periodosConDatos(state).reverse().map((p) => `<option value="${p}" ${p === f.periodo ? 'selected' : ''}>${C.nombrePeriodo(state, p)}</option>`).join('')}</select>
     <select class="entrada" data-f="tipo" aria-label="Tipo"><option value="">Todos los tipos</option>${op(C.TIPOS.map((t) => ({ id: t, nombre: C.NOMBRE_TIPO[t] })), f.tipo)}</select>
     <select class="entrada" data-f="cat" aria-label="Categoría"><option value="">Todas las categorías</option>${op(state.categorias, f.cat)}</select>
     <select class="entrada" data-f="cuenta" aria-label="Cuenta"><option value="">Todas las cuentas</option>${op(state.cuentas, f.cuenta)}</select>
@@ -203,21 +203,23 @@ function vPresupuestos() {
     h += `<h2>Gastos no presupuestados</h2><div class="tarjeta">${Object.entries(sin).map(([id, v]) => `<div class="fila"><div class="nombre">${esc(C.categoria(state, id)?.nombre || 'Sin categoría')}<div class="suave">Salió de su plata libre</div></div>${num(v)}</div>`).join('')}</div>`;
   }
   h += `<h2 class="ed">Categorías sin presupuesto</h2><div class="tarjeta ed">${libres.map((c) => `<div class="fila"><div class="nombre">${esc(c.nombre)}</div><button class="btn mini sec" data-a="ed-pres" data-cat="${c.id}" data-per="${per}">Asignar</button></div>`).join('') || '<div class="vacio">Todas las categorías tienen presupuesto.</div>'}</div>
-    <button class="btn sec ancho ed" data-a="nueva-cat">+ Crear categoría</button>`;
+    <button class="btn sec ancho ed" data-a="nueva-cat">+ Crear categoría</button>
+    <div class="botones ed"><button class="btn sec" data-a="abrir-periodo">Empezar quincena nueva</button>${state.periodos.length > 1 && per === C.ultimoPeriodo(state).id ? '<button class="btn peligro" data-a="deshacer-periodo">Deshacer esta quincena</button>' : ''}</div>`;
   return h;
 }
 
 function vReservas() {
   const per = P();
   const pend = state.reservas.filter((r) => r.estado === 'pendiente').sort((a, b) => a.vence.localeCompare(b.vence));
-  const hechas = state.reservas.filter((r) => r.estado !== 'pendiente' && r.periodo === per).sort((a, b) => a.vence.localeCompare(b.vence));
-  const total = pend.filter((r) => r.periodo <= per).reduce((a, r) => a + r.monto, 0);
-  let h = `<div class="tarjeta"><div class="fila"><div>Reservado y pendiente de pago<div class="suave">Sigue en sus cuentas, pero no es para gastar</div></div>${num(total)}</div></div><div class="rejilla"><div>`;
+  const desde = C.rangoPeriodo(state, per).inicio;
+  const hechas = state.reservas.filter((r) => r.estado !== 'pendiente' && r.vence >= desde).sort((a, b) => a.vence.localeCompare(b.vence));
+  const total = C.resumen(state, hoy()).reservasPend;
+  let h = calendario() + `<div class="tarjeta"><div class="fila"><div>Reservado y pendiente de pago<div class="suave">Sigue en sus cuentas, pero no es para gastar</div></div>${num(total)}</div></div><div class="rejilla"><div>`;
   h += `<h2>Pendientes <button class="btn mini ed" data-a="nueva-reserva">+ Reserva</button></h2><div class="tarjeta">${pend.map(filaReserva).join('') || '<div class="vacio">Nada pendiente. Qué descanso.</div>'}</div>`;
   if (hechas.length) h += `<h2>Ya resueltas en esta quincena</h2><div class="tarjeta">${hechas.map(filaReserva).join('')}</div>`;
   h += '</div><div>';
   h += `<h2>Obligaciones periódicas <button class="btn mini ed" data-a="nueva-ob">+ Obligación</button></h2><div class="tarjeta">${state.obligaciones.map((o) => `<div class="fila"><div><div class="nombre">${esc(o.nombre)} ${o.activa ? '' : '<span class="etiqueta">En pausa</span>'}</div>
-    <div class="suave">${o.frecuencia === 'quincenal' ? `Cada quincena, día ${o.dia} de la quincena` : `Cada mes, el día ${o.dia}`}${o.estimado ? ' · estimado' : ''}${o.moneda === 'USD' ? ` · USD ${o.montoUSD}` : ''}</div></div>
+    <div class="suave">${o.frecuencia === 'quincenal' ? `Cada quincena, ${o.dia === 1 ? 'el día del pago' : `${o.dia - 1} ${o.dia === 2 ? 'día' : 'días'} después del pago`}` : `Cada mes, el día ${o.dia}`}${o.estimado ? ' · estimado' : ''}${o.moneda === 'USD' ? ` · USD ${o.montoUSD}` : ''}</div></div>
     <div class="der">${num(C.montoObligacion(o, state.config.tasaUSD))}<div class="ed"><button class="enlace" data-a="ed-ob" data-id="${o.id}">Editar</button></div></div></div>`).join('') || '<div class="vacio">No hay obligaciones periódicas.</div>'}</div>`;
   const pc = [...state.porCobrar].sort((a, b) => (a.estado === b.estado ? b.fecha.localeCompare(a.fecha) : a.estado === 'pendiente' ? -1 : 1));
   h += `<h2>Me deben <button class="btn mini ed" data-a="nueva-deuda">+ Deuda</button></h2><div class="tarjeta">${pc.map((d) => `<div class="fila"><div><div class="nombre">${esc(d.persona)} ${d.estado === 'recibido' ? '<span class="etiqueta verde">Recibido</span>' : ''}</div>
@@ -227,9 +229,38 @@ function vReservas() {
   return h + '</div></div>';
 }
 
+const MESES_L = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+function calendario() {
+  const h = hoy(), mes = ui.calMes || h.slice(0, 7), [y, m] = mes.split('-').map(Number);
+  const ag = C.agenda(state, y, m, h), n = C.ultimoDia(y, m);
+  const vacios = (new Date(Date.UTC(y, m - 1, 1)).getUTCDay() + 6) % 7; // la semana empieza en lunes
+  const sel = ui.calDia && ui.calDia.startsWith(mes) ? ui.calDia : (h.startsWith(mes) ? h : null);
+  let celdas = '<i></i>'.repeat(vacios);
+  for (let d = 1; d <= n; d++) {
+    const f = `${mes}-${String(d).padStart(2, '0')}`, items = ag[f] || [];
+    const fijos = items.filter((x) => x.clase !== 'pago');
+    const total = fijos.filter((x) => x.clase !== 'cancelada').reduce((a, x) => a + x.monto, 0);
+    const voz = `${d} de ${MESES_L[m - 1]}${items.some((x) => x.clase === 'pago') ? ', día de pago' : ''}${fijos.length ? `, ${fijos.length} ${fijos.length === 1 ? 'gasto fijo' : 'gastos fijos'} por ${f$(total)}` : ''}`;
+    celdas += `<button class="cal-dia ${f === h ? 'hoy' : ''} ${f === sel ? 'sel' : ''} ${items.some((x) => x.clase === 'pago') ? 'pago' : ''}" data-a="cal-dia" data-f="${f}" aria-label="${voz}" aria-pressed="${f === sel}">
+      <b>${d}</b><span>${fijos.slice(0, 4).map((x) => `<i class="p-${x.clase}"></i>`).join('')}</span></button>`;
+  }
+  let det = '';
+  if (sel) {
+    const items = ag[sel] || [];
+    det = `<div class="cal-det"><div class="dia">${C.fechaCorta(sel)}${sel === h ? ' · hoy' : ''}</div>`
+      + (items.some((x) => x.clase === 'pago') ? '<div class="fila"><div class="nombre">Día de pago</div><span class="etiqueta amar">Empezó la quincena</span></div>' : '')
+      + items.filter((x) => x.id).map((x) => filaReserva(state.reservas.find((r) => r.id === x.id))).join('')
+      + items.filter((x) => x.clase === 'previsto').map((x) => `<div class="fila"><div><div class="nombre">${esc(x.nombre)} <span class="etiqueta">Previsto</span></div><div class="suave">Se reserva cuando llegue la quincena en que vence</div></div><div class="der">${num(x.monto)}</div></div>`).join('')
+      + (items.some((x) => x.clase !== 'pago') ? '' : '<div class="suave">Sin gastos fijos este día.</div>')
+      + `<button class="btn sec ancho ed" data-a="cal-nuevo" data-f="${sel}" style="margin-top:10px">+ Anotar gasto fijo el ${C.fechaCorta(sel)}</button></div>`;
+  }
+  return `<section class="tarjeta cal" id="calendario"><div class="cal-cab"><button class="btn mini sec" data-a="cal-mes" data-d="-1" aria-label="Mes anterior">‹</button><h2>${MESES_L[m - 1]} ${y}</h2><button class="btn mini sec" data-a="cal-mes" data-d="1" aria-label="Mes siguiente">›</button></div>
+    <div class="cal-sem">${['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((d) => `<span>${d}</span>`).join('')}</div><div class="cal-mes">${celdas}</div>
+    <div class="leyenda cal-ley"><span><i class="p-pendiente"></i>Pendiente</span><span><i class="p-pagada"></i>Pagado</span><span><i class="p-vencida"></i>Vencido</span><span><i class="p-previsto"></i>Previsto</span><span><i class="p-pago"></i>Día de pago</span></div>${det}</section>`;
+}
 function creditos(per) {
   const c = C.capitulo(state, per);
-  return `<div class="creditos"><h4>CRÉDITOS FINALES</h4><p>Quincena del ${C.nombrePeriodo(per)}</p><hr>
+  return `<div class="creditos"><h4>CRÉDITOS FINALES</h4><p>Quincena ${C.nombrePeriodo(state, per)}</p><hr>
     <p>Entraron<br><span class="num">${f$(c.ingresos)}</span></p><p>Salieron<br><span class="num">${f$(c.gastos)}</span></p>
     <p class="suave" style="color:inherit;opacity:.8">De eso, ${f$(c.pagosReservas)} fueron obligaciones fijas${c.sinPresupuesto ? ` y ${f$(c.sinPresupuesto)} gastos no presupuestados` : ''}.</p><hr>
     ${c.pasados.length ? `<p><b>Se pasó en</b><br>${c.pasados.map((p) => `${esc(p.nombre)}: ${f$(p.exceso)}`).join('<br>')}</p>` : '<p><b>No se pasó en ningún presupuesto.</b></p>'}
@@ -253,7 +284,7 @@ function vAnalisis() {
   h += '</div><div>';
   const pers = C.periodosConDatos(state).filter((p) => p <= per).slice(-6);
   const tots = pers.map((p) => C.capitulo(state, p).gastos); const max3 = Math.max(1, ...tots);
-  h += `<h2>Comparación entre quincenas</h2><div class="tarjeta"><div class="suave">Gasto total de cada quincena</div><div class="columnas">${pers.map((p, i) => { const r = C.rangoPeriodo(p); return `<div><b>${f$(tots[i])}</b><i style="height:${(tots[i] / max3) * 100}%"></i><small>${C.fechaCorta(r.inicio)}</small></div>`; }).join('')}</div></div>`;
+  h += `<h2>Comparación entre quincenas</h2><div class="tarjeta"><div class="suave">Gasto total de cada quincena</div><div class="columnas">${pers.map((p, i) => { const r = C.rangoPeriodo(state, p); return `<div><b>${f$(tots[i])}</b><i style="height:${(tots[i] / max3) * 100}%"></i><small>${C.fechaCorta(r.inicio)}</small></div>`; }).join('')}</div></div>`;
   h += `<h2>Capítulo</h2>${creditos(per)}`;
   return h + '</div></div>';
 }
@@ -265,7 +296,7 @@ function vCuentas() {
     if (c.archivada) continue;
     const t = { ing: 0, gas: 0, ent: 0, sal: 0 };
     for (const m of state.movimientos) {
-      if (C.periodoDe(m.fecha) !== per) continue;
+      if (C.periodoDe(state, m.fecha) !== per) continue;
       if (m.cuentaId === c.id) { if (m.tipo === 'ingreso' || m.tipo === 'cobro') t.ing += m.valor; if (m.tipo === 'gasto') t.gas += m.valor; if (m.tipo === 'transferencia') t.sal += m.valor; }
       if (m.tipo === 'transferencia' && m.cuentaDestinoId === c.id) t.ent += m.valor;
     }
@@ -296,10 +327,10 @@ function vAjustes() {
 const PASOS = [
   { titulo: '¡Quiubo pues!', texto: 'Le muestro la app en menos de un minuto. Puede saltarse el recorrido y volver a verlo cuando quiera desde Ajustes.', boton: 'Empecemos' },
   { sel: '.heroe', titulo: '¿Onta la plata?', texto: 'Este número es su plata libre: lo que hay en sus cuentas menos lo que ya tiene dueño. Si sale en rojo, le está faltando para cubrir lo comprometido.' },
-  { sel: '.ritmo', titulo: 'Su ritmo diario', texto: 'Cuánto puede gastar por día para llegar sin afanes al final de la quincena.' },
+  { sel: '.ritmo', titulo: 'Su ritmo diario', texto: 'Cuánto puede gastar por día para llegar sin afanes al próximo pago. Su quincena va de un pago al siguiente: cuando registre el sueldo, empieza una nueva.' },
   { sel: '#fab', titulo: 'Anote todo aquí', texto: 'Escriba el valor, toque la categoría y guarde. El mismo botón sirve para ingresos, transferencias entre sus cuentas, préstamos y las veces que le invitan algo.' },
   { sel: '#nav a[data-r=presupuestos]', titulo: 'Presupuestos', texto: 'Cuánto tenía, cuánto gastó y cuánto le queda en cada categoría. En comida le cuento cuántos almuerzos le quedan.' },
-  { sel: '#nav a[data-r=reservas]', titulo: 'Esa platica ya tiene dueño', texto: 'Arriendo, servicios y suscripciones. Reservar aparta la plata sin sacarla de la cuenta, y al pagar desde aquí se descuenta una sola vez. También puede anotar lo que le deben.' },
+  { sel: '#nav a[data-r=reservas]', titulo: 'Esa platica ya tiene dueño', texto: 'Arriendo, servicios y suscripciones. Reservar aparta la plata sin sacarla de la cuenta, y al pagar desde aquí se descuenta una sola vez. En el calendario ve qué día vence cada gasto fijo y puede anotar los nuevos.' },
   { sel: '#nav a[data-r=movimientos]', titulo: 'Movimientos', texto: 'Todo lo que ha anotado, con buscador y filtros. Toque cualquier movimiento para corregirlo o eliminarlo.' },
   { sel: '#nav a[data-r=analisis]', titulo: 'Análisis', texto: 'Los gráficos de cada quincena y los créditos finales de cada capítulo: en qué se pasó y en qué le sobró.' },
   { sel: '#btn-ajustes', titulo: 'Ajustes y copia de seguridad', texto: 'Sus datos viven solo en este dispositivo. Descargue una copia de vez en cuando y, en el iPhone, agregue la app a la pantalla de inicio desde el botón Compartir.' },
@@ -314,6 +345,15 @@ function recorrido() {
 }
 
 // ---------- configuración inicial ----------
+// Supone pagos el 15 y el 30 (o fin de mes) para proponer la fecha del último pago.
+function ultimoPagoProbable() {
+  const h = hoy(), { y, m, d } = C.partes(h);
+  const fin = Math.min(30, C.ultimoDia(y, m));
+  if (d >= fin) return `${h.slice(0, 8)}${String(fin).padStart(2, '0')}`;
+  if (d >= 15) return `${h.slice(0, 8)}15`;
+  const ant = C.sumarDias(`${h.slice(0, 8)}01`, -1), a = C.partes(ant);
+  return `${ant.slice(0, 8)}${String(Math.min(30, a.d)).padStart(2, '0')}`;
+}
 function vSetup() {
   const pres = { Almuerzos: 225000, Desayunos: 48000 }; // sugerencias de ejemplo
   return `<form data-form="setup" id="setup">
@@ -323,9 +363,11 @@ function vSetup() {
     <div class="tarjeta"><p class="suave">Mire cada cuenta y escriba lo que tiene hoy.</p>
       <div class="dos">${state.cuentas.map((c) => campo(c.nombre, inMonto('saldo_' + c.id, c.saldoInicial))).join('')}</div></div>
     <h2><span><span class="paso">2</span>¿Cuánto le entra por quincena?</span></h2>
-    <div class="tarjeta"><div class="dos">${campo('Ingreso quincenal', inMonto('ingreso', state.config.ingresoQuincenal))}${campo('Pesos por dólar', inMonto('tasa', state.config.tasaUSD))}</div></div>
+    <div class="tarjeta"><div class="dos">${campo('Ingreso quincenal', inMonto('ingreso', state.config.ingresoQuincenal))}${campo('Pesos por dólar', inMonto('tasa', state.config.tasaUSD))}</div>
+      ${campo('¿Cuándo le pagaron la última vez?', `<input type="date" name="inicio" value="${ultimoPagoProbable()}" max="${hoy()}" required>`)}
+      <p class="suave">Su quincena va de un pago al siguiente. Cada vez que registre el sueldo, empieza una nueva.</p></div>
     <h2><span><span class="paso">3</span>Platica que ya tiene dueño</span></h2>
-    <div class="tarjeta"><p class="suave">Estas son de ejemplo: corrija el nombre, el valor y el día en que vencen (día del mes, o día de la quincena si son quincenales). Desmarque las que no apliquen; después puede agregar más.</p>
+    <div class="tarjeta"><p class="suave">Estas son de ejemplo: corrija el nombre, el valor y el día en que vencen (día del mes; en las quincenales, 1 es el mismo día del pago). Desmarque las que no apliquen; después puede agregar más.</p>
       ${state.obligaciones.map((o) => `<div class="ob"><input type="checkbox" name="on_${o.id}" ${o.activa ? 'checked' : ''} aria-label="Incluir ${esc(o.nombre)}" style="width:22px;height:22px">
         <span><input class="entrada" name="nombre_${o.id}" value="${esc(o.nombre)}" maxlength="60" aria-label="Nombre de la obligación"><span class="suave">${o.frecuencia === 'quincenal' ? 'cada quincena' : 'cada mes'}${o.moneda === 'USD' ? ' · en USD' : ''}</span></span>
         <input class="entrada ${o.moneda === 'USD' ? '' : 'monto'}" inputmode="decimal" name="monto_${o.id}" value="${o.moneda === 'USD' ? o.montoUSD : miles(o.monto)}" aria-label="Valor de ${esc(o.nombre)}">
@@ -338,7 +380,7 @@ function vSetup() {
 }
 function leerSetup() {
   const fd = new FormData($('#setup')); const g = (k) => fd.get(k);
-  const d = { saldos: {}, presupuestos: {}, ingreso: C.parseMonto(g('ingreso')), tasa: C.parseMonto(g('tasa')), obligaciones: [] };
+  const d = { saldos: {}, presupuestos: {}, ingreso: C.parseMonto(g('ingreso')), tasa: C.parseMonto(g('tasa')), inicio: g('inicio'), obligaciones: [] };
   for (const c of state.cuentas) d.saldos[c.id] = C.parseMonto(g('saldo_' + c.id));
   for (const c of cats()) d.presupuestos[c.id] = C.parseMonto(g('pres_' + c.id));
   for (const o of state.obligaciones) {
@@ -353,13 +395,13 @@ function chequeoSetup() {
   const d = leerSetup();
   const obs = state.obligaciones.map((o) => ({ ...o, ...d.obligaciones.find((x) => x.id === o.id) }));
   const pres = Object.values(d.presupuestos).reduce((a, b) => a + b, 0);
-  const linea = (per, etq) => {
-    const res = C.reservasParaPeriodo(obs, per, d.tasa || 1).reduce((a, r) => a + r.monto, 0);
+  const ini = C.fechaValida(d.inicio) ? d.inicio : hoy();
+  const linea = (desde, etq) => {
+    const res = C.reservasParaRango(obs, desde, C.sumarDias(desde, C.DIAS_PERIODO - 1), d.tasa || 1, desde).reduce((a, r) => a + r.monto, 0);
     const dif = d.ingreso - res - pres;
     return `<div class="fila"><div>${etq}<div class="suave" style="color:inherit;opacity:.75">Ingreso ${f$(d.ingreso)} − reservas ${f$(res)} − presupuestos ${f$(pres)}</div></div><span class="num ${dif < 0 ? 'neg' : ''}">${dif < 0 ? 'Faltan ' + f$(-dif) : 'Sobran ' + f$(dif)}</span></div>`;
   };
-  const p = P();
-  el.innerHTML = `<b>CHEQUEO DE REALIDAD</b>${linea(p, 'Esta quincena')}${linea(C.periodoSiguiente(p), 'La siguiente')}`;
+  el.innerHTML = `<b>CHEQUEO DE REALIDAD</b>${linea(ini, 'Esta quincena')}${linea(C.sumarDias(ini, C.DIAS_PERIODO), 'La siguiente')}`;
 }
 
 // ---------- hojas ----------
@@ -380,10 +422,11 @@ function hojaMov(tipo = 'gasto', m = null, pre = {}) {
       + cuentaSel('Sale de', 'cuentaId', selCu)
       + `<details ${ed ? 'open' : ''}><summary>Más detalles</summary>${fecha}${v.reservaId ? '' : desc()}${campo('Nota', `<textarea name="nota" rows="2" maxlength="300">${esc(v.nota || '')}</textarea>`)}</details>`;
   } else if (tipo === 'ingreso') {
-    const sug = v.periodo || C.sugerirPeriodoIngreso(v.fecha); const act = C.periodoDe(v.fecha);
-    const ops = [...new Set([C.periodoAnterior(act), act, C.periodoSiguiente(act), sug])].sort();
-    cuerpo = valor + cuentaSel('Entra a', 'cuentaId', selCu) + campo('¿Para cuál quincena es esta plata?', selPeriodo('periodo', sug, ops).replace(' data-c="periodo"', ''))
-      + '<p class="suave">Si es para una quincena que no ha empezado, sube el saldo pero no su plata libre.</p>' + fecha + desc();
+    const nueva = pre.nueva ?? C.sugerirNuevaQuincena(state, v.fecha);
+    cuerpo = valor + cuentaSel('Entra a', 'cuentaId', selCu) + fecha + desc()
+      + (ed ? '' : `<label class="check"><input type="checkbox" name="nueva" ${nueva ? 'checked' : ''}>Con este pago empieza una quincena nueva</label>
+      <label class="check"><input type="checkbox" name="arrastrar">Sumar lo que sobró de cada presupuesto al de la quincena nueva</label>
+      <p class="suave">Marque la primera casilla cuando sea su sueldo: se cierra la quincena actual y la nueva arranca en la fecha del pago, con sus presupuestos y reservas.</p>`);
   } else if (tipo === 'transferencia') {
     cuerpo = valor + cuentaSel('Sale de', 'cuentaId', selCu) + cuentaSel('Entra a', 'cuentaDestinoId', v.cuentaDestinoId)
       + '<p class="suave">Mover plata entre sus cuentas no es gasto ni ingreso.</p>' + fecha + desc();
@@ -434,7 +477,7 @@ function hojaObligacion(o) {
 function hojaPres(catId, per) {
   const c = C.categoria(state, catId); const p = C.presupuestosDe(state, per).find((x) => x.categoriaId === catId);
   abrirHoja(c.nombre, `<form data-form="pres"><input type="hidden" name="cat" value="${catId}"><input type="hidden" name="per" value="${per}">
-    <p class="suave">Quincena del ${C.nombrePeriodo(per)}${p ? ` · gastado ${f$(p.gastado)}` : ''}${p?.arrastre ? ` · incluye ${f$(p.arrastre)} que sobraron de la quincena anterior` : ''}</p>
+    <p class="suave">Quincena ${C.nombrePeriodo(state, per)}${p ? ` · gastado ${f$(p.gastado)}` : ''}${p?.arrastre ? ` · incluye ${f$(p.arrastre)} que sobraron de la quincena anterior` : ''}</p>
     ${campo('Presupuesto de esta quincena', inMonto('monto', p?.monto || 0))}
     <details><summary>Ajustes de la categoría</summary>${campo('Nombre', `<input name="nombre" value="${esc(c.nombre)}" maxlength="50" required>`)}
     ${campo('Valor de referencia por unidad (opcional)', inMonto('valorRef', c.valorRef))}<p class="suave">Con él le digo cuántos ${esc(c.nombre.toLowerCase())} le quedan.</p>
@@ -450,13 +493,12 @@ function hojaCuadre() {
     ${activas().map((c) => campo(`${c.nombre} (calculado: ${f$(sal[c.id])})`, inMonto('real_' + c.id, sal[c.id]))).join('')}<button class="btn ancho">Cuadrar</button></form>`);
 }
 function hojaAbrir() {
-  const per = P(); const previo = [...state.periodos].filter((p) => p < per).sort().pop();
-  const res = C.reservasParaPeriodo(state.obligaciones, per, state.config.tasaUSD);
-  abrirHoja('Capítulo nuevo', `${previo ? creditos(previo) : ''}<form data-form="abrir">
-    <h2>Quincena del ${C.nombrePeriodo(per)}</h2>
-    <p class="suave">Se copian los presupuestos de la quincena anterior y se reservan estas obligaciones. Nada queda pagado: después puede ajustar todo.</p>
-    <div class="tarjeta">${res.map((r) => `<div class="fila"><div>${esc(r.nombre)}<div class="suave">vence el ${C.fechaCorta(r.vence)}</div></div>${num(r.monto)}</div>`).join('') || '<div class="vacio">Sin obligaciones para esta quincena.</div>'}</div>
-    ${previo ? '<label class="check"><input type="checkbox" name="arrastrar">Sumar lo que sobró de cada presupuesto al mismo presupuesto de esta quincena (si no, queda como plata libre)</label>' : ''}
+  const per = P();
+  abrirHoja('Quincena nueva', `<form data-form="abrir">
+    <p class="suave">Lo normal es que la quincena nueva empiece al registrar el sueldo con el botón +. Use esto si quiere abrirla sin registrar un pago.</p>
+    ${campo('Empieza el', `<input type="date" name="fecha" value="${hoy()}" required>`)}
+    <label class="check"><input type="checkbox" name="arrastrar">Sumar lo que sobró de cada presupuesto al de la quincena nueva</label>
+    <p class="suave">Se cierra la quincena ${C.nombrePeriodo(state, per)}, se copian sus presupuestos y se reservan las obligaciones. Nada queda pagado.</p>
     <button class="btn ancho">Abrir la quincena</button></form>`);
 }
 
@@ -496,6 +538,14 @@ const acciones = {
   recorrido: () => { if (ui.ruta !== 'inicio') { ui.ruta = 'inicio'; history.replaceState(null, '', '#inicio'); render(); } window.scrollTo(0, 0); recorrido(); },
   cuadre: hojaCuadre,
   'abrir-periodo': hojaAbrir,
+  'me-pagaron': () => hojaMov('ingreso', null, { nueva: true }),
+  'deshacer-periodo': () => { if (confirm('¿Deshacer la apertura de esta quincena? Sus gastos vuelven a contar en la anterior y se quitan sus presupuestos.')) commit(() => { C.deshacerPeriodo(state); ui.perPres = ui.perAna = null; }, 'Quincena deshecha.'); },
+  'cal-mes': (el) => { const [y, m] = (ui.calMes || hoy().slice(0, 7)).split('-').map(Number); const d = new Date(Date.UTC(y, m - 1 + Number(el.dataset.d), 1)); ui.calMes = d.toISOString().slice(0, 7); ui.calDia = null; render(); },
+  'cal-dia': (el) => { ui.calDia = el.dataset.f; render(); },
+  'cal-nuevo': (el) => { const f = el.dataset.f, dia = C.partes(f).d; abrirHoja(`Gasto fijo del ${C.fechaCorta(f)}`, `<form data-form="fijo"><input type="hidden" name="fecha" value="${f}">
+    ${campo('Nombre', '<input name="nombre" maxlength="60" required>')}${campo('Valor en pesos', inMonto('monto'))}
+    <fieldset><legend>¿Se repite?</legend>${chips('rep', [{ id: 'mes', nombre: `Todos los meses, el día ${dia}` }, { id: 'una', nombre: 'Solo esta vez' }], 'mes')}</fieldset>
+    <label class="check"><input type="checkbox" name="estimado">El valor es un estimado</label><button class="btn ancho">Guardar</button></form>`); },
   copia: hacerCopia,
   'csv-movs': () => descargar(`vainas-movimientos-${hoy()}.csv`, C.csvMovimientos(state), 'text/csv;charset=utf-8'),
   'csv-pres': () => descargar(`vainas-presupuestos-${hoy()}.csv`, C.csvPresupuestos(state), 'text/csv;charset=utf-8'),
@@ -522,24 +572,26 @@ const formularios = {
     if (tipo !== 'invitacion' && tipo !== 'ajuste' && !d.cuentaId) return aviso('Elija una cuenta.', true);
     const m = { tipo, valor, fecha: d.fecha, cuentaId: d.cuentaId || null, descripcion: previo?.reservaId ? previo.descripcion : desc };
     if (tipo === 'gasto') { m.categoriaId = previo?.reservaId ? null : d.categoriaId; m.nota = (d.nota || '').trim(); }
-    if (tipo === 'ingreso') m.periodo = d.periodo;
     if (tipo === 'transferencia') m.cuentaDestinoId = d.cuentaDestinoId || null;
     if (tipo === 'prestamo') m.persona = (d.persona || '').trim();
     if (tipo === 'invitacion') m.categoriaId = d.categoriaId || null;
     if (tipo === 'ajuste' || tipo === 'cobro') delete m.valor;
     if (!previo && tipo !== 'invitacion' && C.esDuplicado(state, m) && !confirm('Ya hay un movimiento igual en esa fecha. ¿Registrarlo otra vez?')) return;
+    const cerrada = tipo === 'ingreso' && !previo && d.nueva === 'on' ? P() : null;
     return commit(() => {
       if (previo) return C.editarMovimiento(state, previo.id, m);
+      if (cerrada) C.abrirPeriodo(state, m.fecha, { arrastrar: d.arrastrar === 'on' });
       if (tipo === 'prestamo') return C.prestar(state, { valor, persona: m.persona, cuentaId: m.cuentaId, fecha: m.fecha, concepto: desc });
       return C.agregarMovimiento(state, m);
     }, () => {
+      if (cerrada) return 'Quincena nueva abierta. ¡Pilas pues!';
       if (tipo !== 'gasto' || previo?.reservaId) return previo ? 'Cambios guardados.' : 'Anotado.';
-      const p = C.presupuestosDe(state, C.periodoDe(m.fecha)).find((x) => x.categoriaId === m.categoriaId);
+      const p = C.presupuestosDe(state, C.periodoDe(state, m.fecha)).find((x) => x.categoriaId === m.categoriaId);
       if (!p) return 'Anotado como gasto no presupuestado: salió de su plata libre.';
       if (p.exceso) return `No se me descuadre: se pasó por ${f$(p.exceso)} en ${p.nombre}.`;
       const u = p.unidades !== null ? ` (${p.unidades} ${p.nombre.toLowerCase()})` : '';
       return `${p.pct >= 80 ? '¡Pilas pues! ' : 'Anotado. '}Quedan ${f$(p.resta)} en ${p.nombre}${u}.`;
-    });
+    }).then((ok) => { if (ok && cerrada) abrirHoja('Capítulo cerrado', creditos(cerrada) + '<button class="btn ancho" data-a="cerrar" style="margin-top:12px">Seguir</button>'); return ok; });
   },
   pagar: (d) => {
     if (!d.cuentaId) return aviso('Elija una cuenta.', true);
@@ -565,13 +617,18 @@ const formularios = {
     const monto = C.parseMonto(d.monto);
     if (monto > 0) C.fijarPresupuesto(state, ui.perPres || P(), c.id, monto, hoy());
   }, 'Categoría creada.'),
+  fijo: (d) => commit(() => {
+    const base = { nombre: d.nombre.trim(), monto: C.parseMonto(d.monto), estimado: d.estimado === 'on' };
+    if (d.rep === 'una') C.guardarReserva(state, { ...base, vence: d.fecha });
+    else C.guardarObligacion(state, { ...base, frecuencia: 'mensual', dia: C.partes(d.fecha).d }, hoy());
+  }, 'Esa platica ya tiene dueño.'),
   cuenta: (d) => commit(() => C.guardarCuenta(state, { id: d.id || undefined, nombre: d.nombre, saldoInicial: C.parseMonto(d.saldo) }, hoy()), 'Cuenta guardada.'),
   cuadre: (d) => commit(() => {
     const reales = {};
     for (const c of activas()) reales[c.id] = C.parseMonto(d['real_' + c.id]);
     return C.cuadrar(state, reales, hoy());
   }, (aj) => (aj.length ? `Cuadrado con ${aj.length} ${aj.length === 1 ? 'ajuste' : 'ajustes'}.` : 'Todo cuadra. Así da gusto.')),
-  abrir: (d) => commit(() => C.abrirPeriodo(state, P(), { arrastrar: d.arrastrar === 'on' }), 'Quincena abierta. ¡Pilas pues!'),
+  abrir: (d) => commit(() => C.abrirPeriodo(state, d.fecha, { arrastrar: d.arrastrar === 'on' }), 'Quincena abierta. ¡Pilas pues!'),
 };
 
 // ---------- eventos ----------
@@ -594,9 +651,6 @@ document.addEventListener('input', (e) => {
 document.addEventListener('change', (e) => {
   const t = e.target;
   if (t.dataset.c) { ui[t.dataset.c] = t.value; render(); }
-  if (t.name === 'fecha' && t.form?.elements.tipo?.value === 'ingreso' && !t.form.elements.id.value && C.fechaValida(t.value)) {
-    hojaMov('ingreso', null, { fecha: t.value, valor: C.parseMonto(t.form.elements.valor.value), cuentaId: new FormData(t.form).get('cuentaId'), descripcion: t.form.elements.descripcion.value });
-  }
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#fondo').hidden) cerrarHoja(); });
 $('#archivo').addEventListener('change', async (e) => {
@@ -614,13 +668,14 @@ $('#archivo').addEventListener('change', async (e) => {
 function navegar() {
   const r = location.hash.slice(1);
   ui.ruta = TITULOS[r] ? r : 'inicio';
+  if (state.config.setupDone && !ui.revision && C.ponerAlDia(state, hoy())) DB.guardar(state).catch(() => {});
   cerrarHoja(); render(); window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', navegar);
 
 // ---------- arranque ----------
 (async () => {
-  try { state = await DB.cargar(); } catch (e) { aviso('No se pudo abrir la base de datos de este navegador.', true); }
+  try { state = C.migrar(await DB.cargar()); } catch (e) { aviso('No se pudo abrir la base de datos de este navegador.', true); }
   if (!state) state = C.estadoInicial();
   navegar();
   navigator.storage?.persist?.().catch(() => {});

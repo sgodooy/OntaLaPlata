@@ -130,11 +130,11 @@ const n = (t) => parseInt(t.replace(/[^\d-]/g, ''), 10);
   // me invitaron: no mueve nada
   await q.click('#fab'); await q.click('#hoja .tabs button[data-t=invitacion]'); await ok2();
   assert.deepEqual(await tot(), a0);
-  // ingreso para la quincena siguiente: sube el saldo, no el libre
+  // ingreso sin abrir quincena: sube el saldo y la plata libre
   await q.click('#fab'); await q.click('#hoja .tabs button[data-t=ingreso]'); await q.fill('#hoja input[name=valor]', '1000000');
-  await chip2('Bancolombia'); await q.selectOption('#hoja select[name=periodo]', '2026-12-A'); await ok2();
+  await chip2('Bancolombia'); assert.equal(await q.isChecked('#hoja input[name=nueva]'), false); await ok2();
   const a1 = await tot();
-  assert.equal(a1.cuentas, a0.cuentas + 1000000); assert.equal(a1.libre, a0.libre);
+  assert.equal(a1.cuentas, a0.cuentas + 1000000); assert.equal(a1.libre, a0.libre + 1000000);
   // editar el gasto del almuerzo a 30.000 y luego eliminarlo
   await va('movimientos');
   await q.locator('#lista-movs button.fila', { hasText: 'Almuerzos · ' }).first().click();
@@ -178,13 +178,32 @@ const n = (t) => parseInt(t.replace(/[^\d-]/g, ''), 10);
   assert.equal(await q.locator('#fab').isVisible(), false);
   await q.click('[data-a=salir-revision]');
   assert.equal(await q.locator('#fab').isVisible(), true);
+  // calendario: ver un día y anotar un gasto fijo mensual
+  await va('reservas');
+  await q.click('.cal-dia[data-f$="-20"]');
+  assert.match(await q.textContent('.cal-det'), /Suscripción en dólares/);
+  await q.click('.cal-dia[data-f$="-25"]'); await q.click('[data-a=cal-nuevo]');
+  await q.fill('#hoja input[name=nombre]', 'Gimnasio'); await q.fill('#hoja input[name=monto]', '60000'); await ok2();
+  assert.match(await q.textContent('.cal-det'), /Gimnasio/);
+  if (SHOTS) await q.screenshot({ path: SHOTS + '/9-calendario.png', fullPage: true });
+  const a4 = await tot(); assert.equal(a4.libre, a3.libre - 60000);
+  await va('reservas'); await q.click('[data-a=cal-mes][data-d="1"]');
+  assert.ok(await q.locator('.cal-dia i.p-previsto').count() >= 3);
+  // el pago abre una quincena nueva y muestra los créditos finales de la anterior
+  await va('inicio'); await q.click('#fab'); await q.click('#hoja .tabs button[data-t=ingreso]'); await q.fill('#hoja input[name=valor]', '1000000');
+  await chip2('Bancolombia'); await q.check('#hoja input[name=nueva]'); await q.click('#hoja form button.btn:not(.peligro):not(.sec)');
+  await q.waitForSelector('#hoja .creditos'); await q.click('#hoja [data-a=cerrar]');
+  assert.match(await q.textContent('#vista'), /Quincena desde el/);
+  await va('presupuestos'); assert.equal(await q.locator('[data-a=deshacer-periodo]').count(), 1);
+  assert.equal(await q.locator('.pres[data-a=ed-pres]').count(), 3);
+  const a5 = await tot(); assert.equal(a5.cuentas, a4.cuentas + 1000000);
   // nada se desborda hacia los lados en el celular
   for (const r of ['inicio', 'movimientos', 'presupuestos', 'reservas', 'analisis', 'cuentas', 'ajustes']) {
     await va(r);
     assert.ok(await q.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'desborde en ' + r);
   }
   await va('inicio'); await q.reload(); await q.waitForSelector('#libre');
-  assert.equal(n(await q.textContent('#libre')), a3.libre);
+  assert.equal(n(await q.textContent('#libre')), a5.libre);
   assert.deepEqual(errores, []);
   await b.close();
   console.log('Prueba de punta a punta: todo cuadra.');

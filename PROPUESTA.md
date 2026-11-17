@@ -57,15 +57,17 @@ Estas reglas mandan sobre cualquier otra parte de la propuesta.
 
 ## 4. Quincenas
 
-- Hay dos periodos por mes: **del 1 al 14** y **del 15 al último día**.
-- Recibo un sueldo fijo cada quincena. El pago del día 15 financia la quincena del 15 a fin de mes, y el pago de fin de mes (día 30, o el último día si el mes es más corto) financia la quincena del 1 al 14.
-- Al registrar un ingreso elijo a qué quincena corresponde. La app sugiere la que está por empezar si faltan tres días o menos, y la vigente en los demás casos.
-- Las obligaciones mensuales (celular, servicios, suscripciones) se reservan **completas en la quincena en la que vencen**.
-- Al iniciar una quincena, la app propone los mismos presupuestos y reservas periódicas de la anterior para que yo los confirme o ajuste. Nada queda marcado como pagado automáticamente.
+- Mi quincena va **de un pago al siguiente**, sin importar la fecha del calendario. Si me pagan el 13 o el 17, ese día empieza el periodo.
+- Al registrar un ingreso marco «Con este pago empieza una quincena nueva». La app lo sugiere marcado cuando ya pasaron diez días o más desde el último pago.
+- Mientras no llegue el pago siguiente, la quincena sigue abierta. Su final se estima a los 15 días para calcular el ritmo diario; si el pago se atrasa, la app avisa y mantiene el periodo abierto.
+- Las obligaciones mensuales se reservan **completas el día en que vencen**, dentro de la quincena que esté corriendo en esa fecha. Las quincenales se reservan una vez por periodo, contadas desde el día del pago.
+- Al empezar una quincena, la app copia los presupuestos de la anterior y reserva las obligaciones. Nada queda marcado como pagado automáticamente.
 - **Cierre de quincena:**
-  - Si sobró plata de un presupuesto, elijo entre pasarla a la quincena siguiente o dejarla como libre.
-  - Si me pasé, el faltante se muestra y se descuenta del libre de la quincena siguiente.
-  - El historial se conserva completo y puedo consultar cualquier quincena anterior.
+  - Aparecen los «créditos finales» del capítulo que termina.
+  - Si sobró plata de un presupuesto, elijo entre sumarla al mismo presupuesto de la quincena nueva o dejarla como libre.
+  - Si me pasé, el faltante ya salió de mi plata libre.
+  - El historial se conserva completo, con las fechas reales de cada quincena.
+- Si abrí una quincena por error, puedo deshacerla y sus gastos vuelven a contar en la anterior.
 
 ## 5. Pantalla de inicio
 
@@ -146,6 +148,12 @@ Aquí viven las obligaciones fijas. La app trae estas de ejemplo, con nombre, va
 - **Pagar:** un botón en la reserva abre el gasto ya diligenciado. Solo elijo la cuenta y confirmo el valor. La reserva queda pagada y vinculada a ese gasto.
 - **Cancelar:** la plata vuelve al libre.
 - La app nunca crea reservas para gastos opcionales ni marca obligaciones como pagadas por su cuenta.
+
+### Calendario de gastos fijos
+
+- La sección abre con un calendario mensual que muestra qué día vence cada gasto fijo: pendiente, pagado, vencido o previsto para una quincena que todavía no empieza.
+- También marca los días de pago, que son los que abren cada quincena.
+- Al tocar un día veo sus gastos fijos, puedo pagarlos y puedo anotar uno nuevo para esa fecha, de una sola vez o repetido todos los meses.
 
 ## 10. Me deben
 

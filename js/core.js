@@ -2,7 +2,7 @@
 // Todos los valores son enteros en pesos colombianos.
 
 export const TZ = 'America/Bogota';
-export const VERSION = 1;
+export const VERSION = 2;
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 export const TIPOS = ['gasto', 'ingreso', 'transferencia', 'prestamo', 'cobro', 'ajuste', 'invitacion'];
 export const NOMBRE_TIPO = {
@@ -44,25 +44,30 @@ export function diasEntre(a, b) {
 }
 export function fechaCorta(f) { const { m, d } = partes(f); return `${d} ${MESES[m - 1]}`; }
 
-// ---------- quincenas ----------
-export function periodoDe(f) { const { y, m, d } = partes(f); return `${y}-${p2(m)}-${d <= 14 ? 'A' : 'B'}`; }
-export function esPeriodo(p) { return typeof p === 'string' && /^\d{4}-(0[1-9]|1[0-2])-[AB]$/.test(p); }
-export function rangoPeriodo(p) {
-  const [y, m, q] = p.split('-');
-  return q === 'A'
-    ? { inicio: `${y}-${m}-01`, fin: `${y}-${m}-14` }
-    : { inicio: `${y}-${m}-15`, fin: `${y}-${m}-${p2(ultimoDia(+y, +m))}` };
+// ---------- quincenas: van de un pago al siguiente ----------
+// Cada periodo se identifica por su fecha de inicio. Mientras no llegue el pago siguiente sigue abierto,
+// y su final se estima a los 15 días. "cubierto" es hasta qué fecha ya se reservaron las obligaciones mensuales.
+export const DIAS_PERIODO = 15;
+export const ultimoPeriodo = (s) => s.periodos[s.periodos.length - 1] || null;
+export function periodoDe(s, f) {
+  let r = s.periodos[0];
+  for (const p of s.periodos) { if (p.inicio <= f) r = p; else break; }
+  return r ? r.id : null;
 }
-export function periodoSiguiente(p) { return periodoDe(sumarDias(rangoPeriodo(p).fin, 1)); }
-export function periodoAnterior(p) { return periodoDe(sumarDias(rangoPeriodo(p).inicio, -1)); }
-export function nombrePeriodo(p) {
-  const { inicio, fin } = rangoPeriodo(p); const a = partes(inicio), b = partes(fin);
-  return `${a.d} al ${b.d} de ${MESES[a.m - 1]} ${a.y}`;
+export function rangoPeriodo(s, id) {
+  const i = s.periodos.findIndex((p) => p.id === id);
+  const p = s.periodos[i], sig = s.periodos[i + 1];
+  return { inicio: p.inicio, fin: sig ? sumarDias(sig.inicio, -1) : sumarDias(p.inicio, DIAS_PERIODO - 1), abierto: !sig };
 }
-// Un ingreso se sugiere para la quincena que está por empezar si faltan tres días o menos.
-export function sugerirPeriodoIngreso(f) {
-  const p = periodoDe(f);
-  return diasEntre(f, rangoPeriodo(p).fin) + 1 <= 3 ? periodoSiguiente(p) : p;
+export function nombrePeriodo(s, id) {
+  const r = rangoPeriodo(s, id);
+  return r.abierto ? `desde el ${fechaCorta(r.inicio)} ${r.inicio.slice(0, 4)}` : `${fechaCorta(r.inicio)} al ${fechaCorta(r.fin)} ${r.fin.slice(0, 4)}`;
+}
+export const periodosConDatos = (s) => s.periodos.map((p) => p.id);
+// Se sugiere abrir quincena nueva si ya pasaron al menos diez días desde el último pago.
+export function sugerirNuevaQuincena(s, f) {
+  const u = ultimoPeriodo(s);
+  return !!u && diasEntre(u.inicio, f) >= 10;
 }
 
 // ---------- estado inicial ----------
@@ -125,7 +130,7 @@ export function enCuentas(s) { return Object.values(saldos(s)).reduce((a, b) => 
 export function gastadoCategoria(s, catId, periodo) {
   let t = 0;
   for (const m of s.movimientos) {
-    if (m.tipo === 'gasto' && !m.reservaId && m.categoriaId === catId && periodoDe(m.fecha) === periodo) t += m.valor;
+    if (m.tipo === 'gasto' && !m.reservaId && m.categoriaId === catId && periodoDe(s, m.fecha) === periodo) t += m.valor;
   }
   return t;
 }
@@ -148,7 +153,7 @@ export function gastosSinPresupuesto(s, periodo) {
   const con = new Set(s.presupuestos.filter((p) => p.periodo === periodo).map((p) => p.categoriaId));
   const r = {};
   for (const m of s.movimientos) {
-    if (m.tipo === 'gasto' && !m.reservaId && periodoDe(m.fecha) === periodo && !con.has(m.categoriaId)) {
+    if (m.tipo === 'gasto' && !m.reservaId && periodoDe(s, m.fecha) === periodo && !con.has(m.categoriaId)) {
       const k = m.categoriaId || '';
       r[k] = (r[k] || 0) + m.valor;
     }
@@ -158,30 +163,27 @@ export function gastosSinPresupuesto(s, periodo) {
 
 // ---------- resumen: ¿onta la plata? ----------
 export function resumen(s, fecha = hoy()) {
-  const periodo = periodoDe(fecha);
+  const periodo = periodoDe(s, fecha);
   const total = enCuentas(s);
-  const reservasPend = s.reservas.filter((r) => r.estado === 'pendiente' && r.periodo <= periodo).reduce((a, r) => a + r.monto, 0);
-  const pres = presupuestosDe(s, periodo);
+  const r = periodo ? rangoPeriodo(s, periodo) : { fin: fecha, abierto: true };
+  const atrasado = r.abierto && fecha > r.fin; // pasaron los 15 días y todavía no han pagado
+  const hasta = atrasado ? fecha : r.fin;
+  const reservasPend = s.reservas.filter((x) => x.estado === 'pendiente' && x.vence <= hasta).reduce((a, x) => a + x.monto, 0);
+  const pres = periodo ? presupuestosDe(s, periodo) : [];
   const presupRest = pres.reduce((a, p) => a + p.resta, 0);
-  // Ingresos ya recibidos para quincenas futuras, menos lo que ya se pagó por adelantado de esas quincenas.
-  let futuro = 0, gastosPeriodo = 0, ingresosPeriodo = 0;
+  let gastosPeriodo = 0, ingresosPeriodo = 0;
   for (const m of s.movimientos) {
-    if (m.tipo === 'ingreso') { if (m.periodo > periodo) futuro += m.valor; else if (m.periodo === periodo) ingresosPeriodo += m.valor; }
-    if (m.tipo === 'cobro' && m.esIngreso && periodoDe(m.fecha) === periodo) ingresosPeriodo += m.valor;
-    if (m.tipo === 'gasto') {
-      if (periodoDe(m.fecha) === periodo) gastosPeriodo += m.valor;
-      if (m.reservaId) { const r = buscar(s.reservas, m.reservaId); if (r && r.periodo > periodo) futuro -= m.valor; }
-    }
+    if (periodoDe(s, m.fecha) !== periodo) continue;
+    if (m.tipo === 'ingreso' || (m.tipo === 'cobro' && m.esIngreso)) ingresosPeriodo += m.valor;
+    if (m.tipo === 'gasto') gastosPeriodo += m.valor;
   }
-  futuro = Math.max(0, futuro);
-  const conDueno = reservasPend + presupRest + futuro;
+  const conDueno = reservasPend + presupRest;
   const libre = total - conDueno;
-  const diasRestantes = diasEntre(fecha, rangoPeriodo(periodo).fin) + 1;
-  const paraGastar = presupRest + libre;
+  const diasRestantes = atrasado ? 1 : diasEntre(fecha, r.fin) + 1;
   return {
-    periodo, enCuentas: total, reservasPend, presupRest, futuro, conDueno, libre, gastosPeriodo, ingresosPeriodo,
+    periodo, enCuentas: total, reservasPend, presupRest, conDueno, libre, gastosPeriodo, ingresosPeriodo, atrasado,
     presupTotal: pres.reduce((a, p) => a + p.total, 0), presupGastado: pres.reduce((a, p) => a + p.gastado, 0),
-    diasRestantes, ritmo: Math.floor(paraGastar / diasRestantes),
+    diasRestantes, ritmo: Math.floor((presupRest + libre) / diasRestantes),
   };
 }
 
@@ -198,7 +200,6 @@ function validarMov(s, m) {
     if (!cuenta(s, m.cuentaDestinoId)) throw new Error('Elija la cuenta de destino.');
     if (m.cuentaDestinoId === m.cuentaId) throw new Error('Las dos cuentas deben ser distintas.');
   }
-  if (m.tipo === 'ingreso' && !esPeriodo(m.periodo)) m.periodo = periodoDe(m.fecha);
   if (m.tipo === 'gasto' && m.categoriaId && !categoria(s, m.categoriaId)) throw new Error('La categoría no existe.');
   if (m.tipo === 'prestamo' && !String(m.persona || '').trim()) throw new Error('Escriba a quién le prestó.');
 }
@@ -254,48 +255,58 @@ export function eliminarMovimiento(s, id) {
 
 // ---------- reservas y obligaciones ----------
 export function montoObligacion(o, tasa) { return o.moneda === 'USD' ? Math.round(o.montoUSD * tasa) : o.monto; }
-function venceEn(o, periodo) {
-  const { inicio, fin } = rangoPeriodo(periodo);
-  if (o.frecuencia === 'quincenal') {
-    const f = sumarDias(inicio, Math.max(0, (o.dia || 1) - 1));
-    return f > fin ? fin : f;
-  }
-  if (o.frecuencia === 'mensual') {
-    const { y, m } = partes(inicio);
+// Fechas en que vence una obligación mensual dentro de un rango.
+function vencimientos(o, desde, hasta) {
+  const r = []; let { y, m } = partes(desde);
+  while (`${y}-${p2(m)}-01` <= hasta) {
     const f = `${y}-${p2(m)}-${p2(Math.min(Math.max(1, o.dia || 1), ultimoDia(y, m)))}`;
-    return periodoDe(f) === periodo ? f : null;
-  }
-  return null;
-}
-// Reservas que le corresponden a una quincena: las mensuales van completas en la quincena en que vencen.
-export function reservasParaPeriodo(obligaciones, periodo, tasa) {
-  const r = [];
-  for (const o of obligaciones) {
-    if (!o.activa) continue;
-    const vence = venceEn(o, periodo);
-    if (!vence) continue;
-    r.push({
-      obligacionId: o.id, nombre: o.nombre, monto: montoObligacion(o, tasa), moneda: o.moneda, montoUSD: o.montoUSD,
-      tasa: o.moneda === 'USD' ? tasa : null, estimado: !!o.estimado, vence, periodo,
-    });
+    if (f >= desde && f <= hasta) r.push(f);
+    m++; if (m > 12) { m = 1; y++; }
   }
   return r;
 }
-export function generarReservas(s, periodo) {
-  const nuevas = [];
-  for (const r of reservasParaPeriodo(s.obligaciones, periodo, s.config.tasaUSD)) {
-    if (s.reservas.some((x) => x.obligacionId === r.obligacionId && x.periodo === periodo)) continue;
-    const n = { id: uid(), ...r, estado: 'pendiente', movimientoId: null };
+// Reservas que corresponden a un rango de fechas. Las mensuales van completas el día en que vencen;
+// las quincenales salen una vez por periodo, contando los días desde el pago (inicioPeriodo).
+export function reservasParaRango(obligaciones, desde, hasta, tasa, inicioPeriodo = null) {
+  const r = [];
+  for (const o of obligaciones) {
+    if (!o.activa) continue;
+    const fechas = o.frecuencia === 'mensual' ? vencimientos(o, desde, hasta)
+      : inicioPeriodo ? [sumarDias(inicioPeriodo, Math.min(DIAS_PERIODO, Math.max(1, o.dia || 1)) - 1)] : [];
+    for (const vence of fechas) {
+      r.push({ obligacionId: o.id, nombre: o.nombre, monto: montoObligacion(o, tasa), moneda: o.moneda, montoUSD: o.montoUSD,
+        tasa: o.moneda === 'USD' ? tasa : null, estimado: !!o.estimado, vence });
+    }
+  }
+  return r;
+}
+export function generarReservas(s, desde, hasta, inicioPeriodo = null, soloId = null) {
+  const nuevas = [], periodo = ultimoPeriodo(s)?.id ?? null;
+  for (const r of reservasParaRango(s.obligaciones, desde, hasta, s.config.tasaUSD, inicioPeriodo)) {
+    if (soloId && r.obligacionId !== soloId) continue;
+    const o = s.obligaciones.find((x) => x.id === r.obligacionId);
+    const repetida = s.reservas.some((x) => x.obligacionId === r.obligacionId
+      && (x.vence === r.vence || (o.frecuencia === 'quincenal' && x.periodo === periodo)));
+    if (repetida) continue;
+    const n = { id: uid(), ...r, periodo, estado: 'pendiente', movimientoId: null };
     s.reservas.push(n); nuevas.push(n);
   }
   return nuevas;
+}
+// Si el pago se atrasa, el periodo sigue abierto y se van reservando las obligaciones que vencen mientras tanto.
+export function ponerAlDia(s, fecha = hoy()) {
+  const u = ultimoPeriodo(s);
+  if (!u || fecha <= u.cubierto) return false;
+  generarReservas(s, sumarDias(u.cubierto, 1), fecha);
+  u.cubierto = fecha;
+  return true;
 }
 function validarObligacion(o) {
   if (!String(o.nombre || '').trim()) throw new Error('Póngale un nombre.');
   if (o.moneda === 'USD') { if (!(o.montoUSD > 0)) throw new Error('Escriba el valor en dólares.'); }
   else if (!(Number.isInteger(o.monto) && o.monto > 0)) throw new Error('El valor debe ser mayor que cero.');
   if (!['quincenal', 'mensual'].includes(o.frecuencia)) throw new Error('Elija cada cuánto se paga.');
-  const max = o.frecuencia === 'quincenal' ? 14 : 31;
+  const max = o.frecuencia === 'quincenal' ? DIAS_PERIODO : 31;
   if (!(Number.isInteger(o.dia) && o.dia >= 1 && o.dia <= max)) throw new Error(`El día debe estar entre 1 y ${max}.`);
 }
 export function guardarObligacion(s, datos, fecha = hoy()) {
@@ -303,10 +314,13 @@ export function guardarObligacion(s, datos, fecha = hoy()) {
   const nuevo = { moneda: 'COP', monto: 0, montoUSD: 0, estimado: false, activa: true, ...(o || {}), ...datos };
   validarObligacion(nuevo);
   if (o) Object.assign(o, nuevo); else { o = { ...nuevo, id: uid() }; s.obligaciones.push(o); }
-  // La reserva pendiente de la quincena vigente sigue a la obligación.
-  const periodo = periodoDe(fecha);
-  s.reservas = s.reservas.filter((r) => !(r.obligacionId === o.id && r.periodo === periodo && r.estado === 'pendiente'));
-  if (s.periodos.includes(periodo)) generarReservas(s, periodo);
+  // Las reservas pendientes de la quincena vigente siguen a la obligación.
+  const u = ultimoPeriodo(s);
+  if (u) {
+    s.reservas = s.reservas.filter((r) => !(r.obligacionId === o.id && r.periodo === u.id && r.estado === 'pendiente'));
+    const yaResuelta = s.reservas.some((r) => r.obligacionId === o.id && r.periodo === u.id);
+    if (!yaResuelta || o.frecuencia === 'mensual') generarReservas(s, u.inicio, u.cubierto, u.inicio, o.id);
+  }
   return o;
 }
 export function eliminarObligacion(s, id) {
@@ -320,7 +334,7 @@ export function guardarReserva(s, datos) {
   if (!String(nuevo.nombre || '').trim()) throw new Error('Póngale un nombre.');
   if (!(Number.isInteger(nuevo.monto) && nuevo.monto > 0)) throw new Error('El valor debe ser mayor que cero.');
   if (!fechaValida(nuevo.vence)) throw new Error('La fecha de vencimiento no es válida.');
-  nuevo.periodo = periodoDe(nuevo.vence);
+  if (!r) nuevo.periodo = null;
   if (r) Object.assign(r, nuevo); else { r = { ...nuevo, id: uid() }; s.reservas.push(r); }
   return r;
 }
@@ -366,17 +380,32 @@ export function guardarCategoria(s, datos) {
 }
 
 // ---------- abrir quincena ----------
-export function abrirPeriodo(s, periodo, { arrastrar = false } = {}) {
-  if (s.periodos.includes(periodo)) return;
-  const previo = [...s.periodos].filter((p) => p < periodo).sort().pop();
-  s.periodos.push(periodo); s.periodos.sort();
-  generarReservas(s, periodo);
-  if (!previo) return;
-  for (const p of presupuestosDe(s, previo)) {
-    if (!categoria(s, p.categoriaId) || categoria(s, p.categoriaId).archivada) continue;
-    if (s.presupuestos.some((x) => x.periodo === periodo && x.categoriaId === p.categoriaId)) continue;
-    s.presupuestos.push({ id: uid(), periodo, categoriaId: p.categoriaId, monto: p.monto, arrastre: arrastrar ? p.resta : 0, historial: [] });
+// Un pago abre un periodo nuevo: cierra el anterior, copia sus presupuestos y reserva las obligaciones.
+export function abrirPeriodo(s, inicio, { arrastrar = false } = {}) {
+  if (!fechaValida(inicio)) throw new Error('La fecha de inicio no es válida.');
+  const previo = ultimoPeriodo(s);
+  if (previo && inicio <= previo.inicio) throw new Error(`La quincena nueva debe empezar después del ${fechaCorta(previo.inicio)}, cuando empezó la actual.`);
+  const fin = sumarDias(inicio, DIAS_PERIODO - 1);
+  const p = { id: inicio, inicio, cubierto: previo && previo.cubierto > fin ? previo.cubierto : fin };
+  s.periodos.push(p);
+  generarReservas(s, previo ? sumarDias(previo.cubierto, 1) : inicio, p.cubierto, inicio);
+  if (!previo) return p;
+  for (const x of presupuestosDe(s, previo.id)) {
+    const cat = categoria(s, x.categoriaId);
+    if (!cat || cat.archivada) continue;
+    s.presupuestos.push({ id: uid(), periodo: p.id, categoriaId: x.categoriaId, monto: x.monto, arrastre: arrastrar ? x.resta : 0, historial: [] });
   }
+  return p;
+}
+// Deshace la apertura de la última quincena: sus gastos vuelven a contar en la anterior.
+export function deshacerPeriodo(s) {
+  if (s.periodos.length < 2) throw new Error('No hay una quincena anterior a la cual volver.');
+  const p = s.periodos.pop();
+  s.presupuestos = s.presupuestos.filter((x) => x.periodo !== p.id);
+  s.reservas = s.reservas.filter((r) => !(r.periodo === p.id && r.obligacionId && r.estado === 'pendiente'));
+  const u = ultimoPeriodo(s);
+  for (const r of s.reservas) if (r.periodo === p.id) r.periodo = u.id;
+  if (p.cubierto > u.cubierto) { const hasta = p.cubierto; generarReservas(s, sumarDias(u.cubierto, 1), hasta); u.cubierto = hasta; }
 }
 
 // ---------- me deben ----------
@@ -441,7 +470,8 @@ export function cuadrar(s, reales, fecha = hoy()) {
 }
 
 // ---------- configuración inicial ----------
-export function configurar(s, { saldos: sal = {}, ingreso, tasa, obligaciones = [], presupuestos = {} }, fecha = hoy()) {
+export function configurar(s, { saldos: sal = {}, ingreso, tasa, obligaciones = [], presupuestos = {}, inicio = fecha }, fecha = hoy()) {
+  if (!fechaValida(inicio) || inicio > fecha) throw new Error('La fecha del último pago no puede ser futura.');
   if (!(Number.isInteger(ingreso) && ingreso >= 0)) throw new Error('El ingreso quincenal no es válido.');
   if (!(tasa > 0)) throw new Error('La tasa de cambio debe ser mayor que cero.');
   for (const c of s.cuentas) {
@@ -456,8 +486,8 @@ export function configurar(s, { saldos: sal = {}, ingreso, tasa, obligaciones = 
     Object.assign(o, d);
     if (o.activa) validarObligacion(o);
   }
-  const periodo = periodoDe(fecha);
-  abrirPeriodo(s, periodo);
+  const periodo = abrirPeriodo(s, inicio).id;
+  ponerAlDia(s, fecha);
   for (const [catId, monto] of Object.entries(presupuestos)) if (monto > 0) fijarPresupuesto(s, periodo, catId, monto, fecha);
   s.config.setupDone = true; s.config.ultimoCuadre = fecha;
 }
@@ -466,9 +496,8 @@ export function configurar(s, { saldos: sal = {}, ingreso, tasa, obligaciones = 
 export function capitulo(s, periodo) {
   let ingresos = 0, gastos = 0, pagosReservas = 0, invitaciones = 0;
   for (const m of s.movimientos) {
-    if (m.tipo === 'ingreso' && m.periodo === periodo) ingresos += m.valor;
-    if (periodoDe(m.fecha) !== periodo) continue;
-    if (m.tipo === 'cobro' && m.esIngreso) ingresos += m.valor;
+    if (periodoDe(s, m.fecha) !== periodo) continue;
+    if (m.tipo === 'ingreso' || (m.tipo === 'cobro' && m.esIngreso)) ingresos += m.valor;
     if (m.tipo === 'gasto') { gastos += m.valor; if (m.reservaId) pagosReservas += m.valor; }
     if (m.tipo === 'invitacion') invitaciones++;
   }
@@ -482,15 +511,28 @@ export function capitulo(s, periodo) {
     balance: ingresos - gastos,
   };
 }
-export function periodosConDatos(s) {
-  const set = new Set(s.periodos);
-  for (const m of s.movimientos) set.add(periodoDe(m.fecha));
-  return [...set].sort();
+// Gastos fijos de un mes para el calendario: reservas, obligaciones previstas y días de pago.
+export function agenda(s, y, m, fecha = hoy()) {
+  const r = {}, pref = `${y}-${p2(m)}-`;
+  const add = (f, x) => { (r[f] ||= []).push(x); };
+  for (const x of s.reservas) {
+    if (!x.vence.startsWith(pref)) continue;
+    const clase = x.estado === 'pagada' ? 'pagada' : x.estado === 'cancelada' ? 'cancelada' : x.vence < fecha ? 'vencida' : 'pendiente';
+    add(x.vence, { clase, id: x.id, nombre: x.nombre, monto: x.monto });
+  }
+  const u = ultimoPeriodo(s);
+  for (const o of s.obligaciones) {
+    if (!o.activa || o.frecuencia !== 'mensual' || !u) continue;
+    const f = pref + p2(Math.min(Math.max(1, o.dia), ultimoDia(y, m)));
+    if (f > u.cubierto && !s.reservas.some((x) => x.obligacionId === o.id && x.vence === f)) add(f, { clase: 'previsto', obligacionId: o.id, nombre: o.nombre, monto: montoObligacion(o, s.config.tasaUSD) });
+  }
+  for (const p of s.periodos) if (p.inicio.startsWith(pref)) add(p.inicio, { clase: 'pago' });
+  return r;
 }
 export function gastoPorCategoria(s, periodo, tipo = '') {
   const r = new Map();
   for (const m of s.movimientos) {
-    if (m.tipo !== 'gasto' || periodoDe(m.fecha) !== periodo) continue;
+    if (m.tipo !== 'gasto' || periodoDe(s, m.fecha) !== periodo) continue;
     const cat = categoria(s, m.categoriaId);
     const t = m.reservaId ? 'fijo' : (cat?.tipo || 'habitual');
     if (tipo && t !== tipo) continue;
@@ -501,11 +543,29 @@ export function gastoPorCategoria(s, periodo, tipo = '') {
 }
 
 // ---------- copias y exportación ----------
+// Lleva una copia de la versión 1 (quincenas de calendario) al modelo de pago a pago.
+export function migrar(o) {
+  if (!o || o.version !== 1 || !Array.isArray(o.periodos)) return o;
+  const viejo = (p) => {
+    if (typeof p !== 'string' || !/^\d{4}-\d{2}-[AB]$/.test(p)) return null;
+    const [y, m, q] = p.split('-');
+    return q === 'A' ? { inicio: `${y}-${m}-01`, fin: `${y}-${m}-14` } : { inicio: `${y}-${m}-15`, fin: `${y}-${m}-${p2(ultimoDia(+y, +m))}` };
+  };
+  o.periodos = o.periodos.map(viejo).filter(Boolean).sort((a, b) => a.inicio.localeCompare(b.inicio)).map((r) => ({ id: r.inicio, inicio: r.inicio, cubierto: r.fin }));
+  for (const x of o.presupuestos || []) x.periodo = viejo(x.periodo)?.inicio ?? x.periodo;
+  for (const x of o.reservas || []) x.periodo = viejo(x.periodo)?.inicio ?? null;
+  for (const m of o.movimientos || []) delete m.periodo;
+  o.version = VERSION;
+  return o;
+}
 export function validarEstado(o) {
   const listas = ['cuentas', 'categorias', 'obligaciones', 'presupuestos', 'reservas', 'movimientos', 'porCobrar', 'periodos'];
   if (!o || typeof o !== 'object' || !o.config || typeof o.config !== 'object') throw new Error('El archivo no es una copia de VAINAS.');
+  o = migrar(o);
   if (o.version !== VERSION) throw new Error('La copia es de otra versión de VAINAS.');
   for (const k of listas) if (!Array.isArray(o[k])) throw new Error('El archivo no es una copia de VAINAS.');
+  for (const p of o.periodos) if (!p || !fechaValida(p.inicio) || p.id !== p.inicio || !fechaValida(p.cubierto)) throw new Error('La copia tiene quincenas dañadas.');
+  for (const r of o.reservas) if (!fechaValida(r.vence) || !Number.isInteger(r.monto)) throw new Error('La copia tiene reservas dañadas.');
   const ids = new Set(o.cuentas.map((c) => c.id));
   for (const c of o.cuentas) if (typeof c.id !== 'string' || !Number.isInteger(c.saldoInicial)) throw new Error('La copia tiene cuentas dañadas.');
   for (const m of o.movimientos) {
@@ -522,7 +582,7 @@ function csv(filas) {
 export function csvMovimientos(s) {
   const filas = [['Fecha', 'Quincena', 'Tipo', 'Valor', 'Cuenta', 'Cuenta destino', 'Categoría', 'Descripción', 'Persona', 'Nota']];
   for (const m of [...s.movimientos].sort((a, b) => a.fecha.localeCompare(b.fecha))) {
-    filas.push([m.fecha, m.tipo === 'ingreso' ? m.periodo : periodoDe(m.fecha), NOMBRE_TIPO[m.tipo], m.valor, cuenta(s, m.cuentaId)?.nombre,
+    filas.push([m.fecha, periodoDe(s, m.fecha), NOMBRE_TIPO[m.tipo], m.valor, cuenta(s, m.cuentaId)?.nombre,
       cuenta(s, m.cuentaDestinoId)?.nombre, m.reservaId ? 'Pago de reserva' : categoria(s, m.categoriaId)?.nombre, m.descripcion, m.persona, m.nota]);
   }
   return csv(filas);
