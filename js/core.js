@@ -463,13 +463,24 @@ export function eliminarPorCobrar(s, id) {
 }
 
 // ---------- cuentas ----------
-export function guardarCuenta(s, { id, nombre, saldoInicial = 0 }, fecha = hoy()) {
+// Aspecto de una cuenta: color de la fila e imagen opcional (se guarda en el dispositivo, como el resto de los datos).
+export const COLOR_OK = /^#[0-9a-f]{6}$/i;
+export const ICONO_OK = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
+function aspecto(c, color, icono) {
+  if (color !== undefined) { if (color && !COLOR_OK.test(color)) throw new Error('El color no es válido.'); c.color = color || null; }
+  if (icono !== undefined) {
+    if (icono && (!ICONO_OK.test(icono) || icono.length > 300000)) throw new Error('La imagen no sirve o es muy pesada.');
+    c.icono = icono || null;
+  }
+}
+export function guardarCuenta(s, { id, nombre, saldoInicial = 0, color, icono }, fecha = hoy()) {
   nombre = String(nombre || '').trim();
   if (!nombre) throw new Error('Póngale un nombre a la cuenta.');
   if (s.cuentas.some((c) => c.id !== id && !c.archivada && c.nombre.toLowerCase() === nombre.toLowerCase())) throw new Error('Ya existe una cuenta con ese nombre.');
-  if (id) { cuenta(s, id).nombre = nombre; return cuenta(s, id); }
+  if (id) { const c = cuenta(s, id); aspecto(c, color, icono); c.nombre = nombre; return c; }
   if (!(Number.isInteger(saldoInicial) && saldoInicial >= 0)) throw new Error('El saldo inicial no es válido.');
   const c = { id: uid(), nombre, saldoInicial, saldoFecha: fecha, confirmada: true, archivada: false };
+  aspecto(c, color, icono);
   s.cuentas.push(c);
   return c;
 }

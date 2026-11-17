@@ -3,7 +3,7 @@ import * as DB from './db.js';
 import { iniciarTour, tourActivo } from './tour.js';
 import * as FX from './efectos.js';
 
-const VERSION_APP = 16; // sube con cada publicación; se muestra en Ajustes
+const VERSION_APP = 17; // sube con cada publicación; se muestra en Ajustes
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -90,6 +90,38 @@ function render() {
   else if (ruta === 'inicio' && !state.config.tourVisto && !ui.revision && !tourActivo()) recorrido();
 }
 
+// Color e insignia de cada cuenta. Los colores sugeridos son los que la gente asocia con cada entidad;
+// la imagen la pone la persona desde su propio celular.
+const COLORES_CUENTA = [[/^nu\b/i, '#820ad1', 'nu'], [/bancolombia/i, '#fdda24', 'B'], [/nequi/i, '#da0081', 'N'], [/daviplata|davivienda/i, '#ed1c27', 'D'], [/efectivo/i, '#2f5d50', '$']];
+function aspectoCuenta(c) {
+  const sug = COLORES_CUENTA.find(([rx]) => rx.test(c.nombre));
+  const bg = C.COLOR_OK.test(c.color || '') ? c.color : (sug ? sug[1] : '#e4d8bd');
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(bg.slice(i, i + 2), 16));
+  const claro = (r * 299 + g * 587 + b * 114) / 1000 > 150;
+  return { bg, fg: claro ? '#2a2420' : '#ffffff', sigla: sug ? sug[2] : (c.nombre.trim()[0] || '?').toUpperCase(), icono: C.ICONO_OK.test(c.icono || '') ? c.icono : null };
+}
+function filaCuenta(c, saldo) {
+  const a = aspectoCuenta(c);
+  return `<div class="cuenta" style="background:${a.bg};color:${a.fg}"><div class="c-id">${a.icono ? `<img src="${a.icono}" alt=""><span class="oculto">${esc(c.nombre)}</span>` : `<span class="c-sigla">${esc(a.sigla)}</span><span class="nombre">${esc(c.nombre)}</span>`}</div><span class="num">${f$(saldo)}</span></div>`;
+}
+function hojaCuenta(c) {
+  const a = c ? aspectoCuenta(c) : { bg: '#2f5d50', icono: null };
+  abrirHoja(c ? 'Editar cuenta' : 'Nueva cuenta', `<form data-form="cuenta"><input type="hidden" name="id" value="${c?.id || ''}"><input type="hidden" name="icono" value="${a.icono || ''}">
+    ${campo('Nombre', `<input name="nombre" value="${esc(c?.nombre || '')}" maxlength="40" required>`)}${c ? '' : campo('Saldo de hoy', inMonto('saldo'))}
+    ${campo('Color de la fila', `<input type="color" name="color" value="${a.bg}">`)}
+    <fieldset><legend>Logo o imagen (opcional)</legend><div class="c-prev">${a.icono ? `<img src="${a.icono}" alt="Imagen actual">` : '<span class="suave">Sin imagen: se muestra una inicial.</span>'}</div>
+    <div class="botones"><label class="btn sec">Elegir imagen<input type="file" accept="image/*" data-icono hidden></label><button type="button" class="btn sec" data-a="quitar-icono">Quitar imagen</button></div>
+    <p class="suave">Puede usar una captura del ícono de la app de su banco. La imagen se guarda solo en este dispositivo y reemplaza el nombre en la fila.</p></fieldset>
+    <button class="btn ancho">${c ? 'Guardar' : 'Crear'}</button></form>`);
+}
+// Reduce la imagen elegida a un cuadrado pequeño para que pese poco.
+async function iconoDesdeArchivo(file) {
+  const img = await createImageBitmap(file);
+  const lado = Math.min(img.width, img.height), cv = document.createElement('canvas');
+  cv.width = cv.height = 128;
+  cv.getContext('2d').drawImage(img, (img.width - lado) / 2, (img.height - lado) / 2, lado, lado, 0, 0, 128, 128);
+  return cv.toDataURL('image/png');
+}
 function filaReserva(r) {
   const vencida = r.estado === 'pendiente' && r.vence < hoy();
   const est = r.estado === 'pagada' ? '<span class="etiqueta verde">Pagada</span>' : r.estado === 'cancelada' ? '<span class="etiqueta">Cancelada</span>' : vencida ? '<span class="etiqueta rojo">Vencida</span>' : '';
@@ -119,7 +151,7 @@ function vInicio() {
     </dl></section>`;
   h += `<div class="ritmo">${r.ritmo > 0 ? `Le quedan <span class="num">${f$(r.ritmo)}</span> ${r.atrasado ? 'mientras le pagan.' : `por día hasta el próximo pago, calculado para dentro de ${r.diasRestantes} ${r.diasRestantes === 1 ? 'día' : 'días'}.`}` : '¡Pilas pues! Ya no queda plata para gastar en esta quincena.'}</div>`;
   h += '<div class="rejilla"><div>';
-  h += `<h2>Mis cuentas <a class="enlace" href="#cuentas">Ver todo</a></h2><div class="tarjeta">${activas().map((c) => `<div class="fila"><div class="nombre">${esc(c.nombre)}</div>${num(sal[c.id])}</div>`).join('')}</div>`;
+  h += `<h2>Mis cuentas <a class="enlace" href="#cuentas">Ver todo</a></h2><div class="cuentas">${activas().map((c) => filaCuenta(c, sal[c.id])).join('')}</div>`;
   const pct = r.presupTotal ? Math.round((r.presupGastado / r.presupTotal) * 100) : 0;
   h += `<h2>Quincena ${C.nombrePeriodo(state, r.periodo)}</h2><div class="tarjeta">
     <div class="pres"><div class="cab"><span>Presupuesto ${num(r.presupTotal)}</span><span class="num">${pct} %</span></div>
@@ -339,9 +371,9 @@ function vCuentas() {
       if (m.cuentaId === c.id) { if (m.tipo === 'ingreso' || m.tipo === 'cobro') t.ing += m.valor; if (m.tipo === 'gasto') t.gas += m.valor; if (m.tipo === 'transferencia') t.sal += m.valor; }
       if (m.tipo === 'transferencia' && m.cuentaDestinoId === c.id) t.ent += m.valor;
     }
-    h += `<div class="tarjeta"><div class="fila"><div class="nombre">${esc(c.nombre)}</div>${num(sal[c.id])}</div>
+    h += `<div class="tarjeta">${filaCuenta(c, sal[c.id])}
       <div class="suave">En esta quincena: ingresos ${f$(t.ing)} · gastos ${f$(t.gas)} · transferencias recibidas ${f$(t.ent)} · enviadas ${f$(t.sal)}</div>
-      <div class="botones"><button class="btn mini sec" data-a="ver-cuenta" data-id="${c.id}">Ver movimientos</button><button class="btn mini sec ed" data-a="ed-cuenta" data-id="${c.id}">Renombrar</button><button class="btn mini peligro ed" data-a="quitar-cuenta" data-id="${c.id}">Quitar</button></div></div>`;
+      <div class="botones"><button class="btn mini sec" data-a="ver-cuenta" data-id="${c.id}">Ver movimientos</button><button class="btn mini sec ed" data-a="ed-cuenta" data-id="${c.id}">Editar</button><button class="btn mini peligro ed" data-a="quitar-cuenta" data-id="${c.id}">Quitar</button></div></div>`;
   }
   return h + `</div><div class="botones ed"><button class="btn" data-a="cuadre">Cuadre de caja</button><button class="btn sec" data-a="nueva-cuenta">+ Cuenta</button></div>`;
 }
@@ -590,8 +622,9 @@ const acciones = {
   'nueva-cat': () => abrirHoja('Nueva categoría', `<form data-form="cat">${campo('Nombre', '<input name="nombre" maxlength="50" required>')}${campo('Tipo de gasto', '<select name="tipo"><option>habitual</option><option>social</option><option>antojo</option><option>extraordinario</option></select>')}${campo('Presupuesto de esta quincena (opcional)', inMonto('monto'))}<button class="btn ancho">Crear</button></form>`),
   'tipo-ana': (el) => { ui.tipoAna = el.dataset.t; render(); },
   'ver-cuenta': (el) => { ui.filtros = { ...filtrosVacios(), cuenta: el.dataset.id }; location.hash = '#movimientos'; },
-  'nueva-cuenta': () => abrirHoja('Nueva cuenta', `<form data-form="cuenta"><input type="hidden" name="id" value="">${campo('Nombre', '<input name="nombre" maxlength="40" required>')}${campo('Saldo de hoy', inMonto('saldo'))}<button class="btn ancho">Crear</button></form>`),
-  'ed-cuenta': (el) => { const c = C.cuenta(state, el.dataset.id); abrirHoja('Renombrar cuenta', `<form data-form="cuenta"><input type="hidden" name="id" value="${c.id}">${campo('Nombre', `<input name="nombre" value="${esc(c.nombre)}" maxlength="40" required>`)}<button class="btn ancho">Guardar</button></form>`); },
+  'nueva-cuenta': () => hojaCuenta(null),
+  'quitar-icono': (el) => { const f = el.closest('form'); f.elements.icono.value = ''; f.querySelector('.c-prev').innerHTML = '<span class="suave">Sin imagen: se muestra una inicial.</span>'; },
+  'ed-cuenta': (el) => hojaCuenta(C.cuenta(state, el.dataset.id)),
   'quitar-cuenta': (el) => { if (confirm('¿Quitar esta cuenta? Si tiene movimientos se archiva para conservar el historial.')) commit(() => C.quitarCuenta(state, el.dataset.id), 'Cuenta quitada.'); },
   recorrido: () => { if (ui.ruta !== 'inicio') { ui.ruta = 'inicio'; history.replaceState(null, '', '#inicio'); render(); } window.scrollTo(0, 0); recorrido(); },
   'poner-fecha': (el) => { const i = el.closest('form').elements.fecha; i.value = el.dataset.f; marcarFechas(); },
@@ -704,7 +737,7 @@ const formularios = {
   }, 'Esa platica ya tiene dueño.'),
   categoria: (d) => commit(() => C.guardarCategoria(state, { id: d.id || undefined, nombre: d.nombre, tipo: d.tipo, valorRef: C.parseMonto(d.valorRef), comida: d.comida === 'on' }), d.id ? 'Categoría guardada.' : 'Categoría agregada.'),
   ingresoInicial: (d) => commit(() => C.fijarIngresoInicial(state, C.ultimoPeriodo(state).id, C.parseMonto(d.valor)), 'Guardado.'),
-  cuenta: (d) => commit(() => C.guardarCuenta(state, { id: d.id || undefined, nombre: d.nombre, saldoInicial: C.parseMonto(d.saldo) }, hoy()), 'Cuenta guardada.'),
+  cuenta: (d) => commit(() => C.guardarCuenta(state, { id: d.id || undefined, nombre: d.nombre, saldoInicial: C.parseMonto(d.saldo), color: d.color, icono: d.icono || '' }, hoy()), 'Cuenta guardada.'),
   cuadre: (d) => commit(() => {
     const reales = {};
     for (const c of activas()) reales[c.id] = C.parseMonto(d['real_' + c.id]);
@@ -739,6 +772,11 @@ document.addEventListener('input', (e) => {
 document.addEventListener('change', (e) => {
   const t = e.target;
   if (t.dataset.c) { ui[t.dataset.c] = t.value; render(); }
+  if ('icono' in t.dataset && t.files[0]) {
+    const f = t.form;
+    iconoDesdeArchivo(t.files[0]).then((url) => { f.elements.icono.value = url; f.querySelector('.c-prev').innerHTML = `<img src="${url}" alt="Imagen elegida">`; })
+      .catch(() => aviso('No pude leer esa imagen. Pruebe con otra.', true));
+  }
   if ('anim' in t.dataset) { const v = t.checked; commit(() => { state.config.animaciones = v; }, v ? 'Animaciones encendidas.' : 'Animaciones apagadas.').then((ok) => { if (ok) FX.usarAnimaciones(v); }); }
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#fondo').hidden) cerrarHoja(); });

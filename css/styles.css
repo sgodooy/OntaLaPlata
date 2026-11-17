@@ -303,3 +303,15 @@ h2 { border-left: 5px solid var(--acento); padding-left: 8px; }
 .confeti i { position: absolute; top: -24px; width: 10px; height: 18px; border-radius: 3px; animation: caer linear both; }
 .confeti .k0 { background: var(--mostaza); } .confeti .k1 { background: var(--terra); } .confeti .k2 { background: var(--cielo); } .confeti .k3 { background: var(--verde2); } .confeti .k4 { background: var(--ciruela); }
 @keyframes caer { to { transform: translateY(112vh) rotate(600deg); } }
+
+/* cuentas con su color e insignia */
+.cuentas { display: grid; gap: 8px; margin-bottom: 12px; }
+.cuenta { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 16px; min-height: 60px; }
+.cuenta .num { font-size: 1.1rem; color: inherit; }
+.c-id { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.c-id img, .c-prev img { width: 40px; height: 40px; border-radius: 11px; object-fit: cover; display: block; }
+.c-sigla { width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; flex-shrink: 0; font-family: var(--titulos); font-weight: 800; font-size: 1.15rem; background: rgba(255, 255, 255, .22); border: 2px solid currentColor; }
+.tarjeta > .cuenta { margin-bottom: 8px; }
+.c-prev { margin: 4px 0; min-height: 40px; display: flex; align-items: center; }
+.oculto { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+input[type="color"] { padding: 4px; height: 46px; }
