@@ -7,7 +7,8 @@ const n = (t) => parseInt(t.replace(/[^\d-]/g, ''), 10);
 
 (async () => {
   const b = await chromium.launch();
-  const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: SHOTS ? 2 : 1, timezoneId: 'America/Bogota' });
+  // Sin animaciones, para leer las cifras ya quietas; los efectos se prueban al final con movimiento.
+  const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: SHOTS ? 2 : 1, timezoneId: 'America/Bogota', reducedMotion: 'reduce' });
   const p = await ctx.newPage();
   const errores = [];
   p.on('pageerror', (e) => errores.push(e.message));
@@ -266,6 +267,27 @@ const n = (t) => parseInt(t.replace(/[^\d-]/g, ''), 10);
   }
   await va('inicio'); await q.reload(); await q.waitForSelector('#libre');
   assert.equal(n(await q.textContent('#libre')), a5.libre);
+  // efectos: la pantalla «fuera del aire» se puede ver y cerrar; el encendido aparece y se va solo
+  await va('ajustes'); await q.click('[data-a=ver-reposo]');
+  await q.waitForSelector('.reposo'); assert.match(await q.textContent('.r-hora'), /^\d{2}:\d{2}$/);
+  await q.click('.reposo'); assert.equal(await q.locator('.reposo').count(), 0);
+  const ctx2 = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: SHOTS ? 2 : 1, timezoneId: 'America/Bogota' });
+  const w = await ctx2.newPage(); w.on('pageerror', (e) => errores.push(e.message));
+  await w.goto(URL); await w.waitForSelector('.encendido');
+  if (SHOTS) { await w.waitForTimeout(1100); await w.screenshot({ path: SHOTS + '/11-encendido.png' }); }
+  await w.waitForSelector('.encendido', { state: 'detached', timeout: 4000 });
+  await w.waitForSelector('#setup'); await w.click('#setup > button.btn');
+  await w.waitForSelector('.tour'); await w.click('.t-carta [data-t=saltar]');
+  await w.waitForTimeout(1200);
+  assert.match(await w.textContent('#libre'), /^-?\$[\d.]+$/);
+  assert.equal(n(await w.textContent('#libre')), n(await w.textContent('#en-cuentas')) - n(await w.textContent('#con-dueno')), 'el número termina en el valor exacto');
+  await w.goto(URL + '#ajustes'); await w.click('[data-a=ver-reposo]'); await w.waitForTimeout(1500);
+  if (SHOTS) await w.screenshot({ path: SHOTS + '/12-fuera-del-aire.png' });
+  await w.click('.reposo');
+  await w.click('[data-anim]'); await w.waitForTimeout(300);
+  await w.goto(URL + '#inicio'); await w.reload(); await w.waitForSelector('#libre');
+  assert.equal(await w.locator('.encendido').count(), 0, 'con las animaciones apagadas no hay encendido');
+  await ctx2.close();
   assert.deepEqual(errores, []);
   await b.close();
   console.log('Prueba de punta a punta: todo cuadra.');

@@ -61,6 +61,7 @@ export function iniciarTour(pasos, alCerrar) {
     const el = p.sel && document.querySelector(p.sel);
     if (el) el.scrollIntoView({ block: 'center', behavior: 'instant' });
     ubicar();
+    setTimeout(() => { if (activo) ubicar(); }, 350); // las tarjetas entran con una animación corta
     carta.querySelector('[data-t=sig]').focus({ preventScroll: true });
   }
 

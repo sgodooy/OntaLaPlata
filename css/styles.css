@@ -209,3 +209,50 @@ body::before { content: ""; position: fixed; top: 0; left: 0; right: 0; height: 
 
 .leyenda i.cerca { background: var(--mostaza); }
 .g-fila .barra { margin: 5px 0 3px; }
+
+/* ---------- efectos de televisor ---------- */
+.encendido { position: fixed; inset: 0; z-index: 60; background: #0d0b0a; animation: e-fuera .35s ease-in 1.5s forwards; }
+.e-pantalla { position: absolute; inset: 0; background: var(--verde); display: grid; place-content: center; justify-items: center; gap: 12px; overflow: hidden; animation: e-prende .6s cubic-bezier(.2, .8, .2, 1) both; }
+.e-pantalla::after, .reposo::after, .rodar::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(0, 0, 0, .16) 0 1px, transparent 1px 3px); }
+.e-barras { display: flex; width: min(64vw, 300px); height: 12px; border-radius: 99px; overflow: hidden; animation: e-sube .45s .5s both; }
+.e-barras i { flex: 1; } .e-barras i:nth-child(1) { background: var(--mostaza); } .e-barras i:nth-child(2) { background: var(--terra); }
+.e-barras i:nth-child(3) { background: var(--cielo); } .e-barras i:nth-child(4) { background: var(--verde2); } .e-barras i:nth-child(5) { background: var(--crema); }
+.e-logo { font-family: var(--titulos); font-weight: 800; font-size: clamp(2.6rem, 15vw, 4.6rem); color: var(--crema); letter-spacing: .16em; padding-left: .16em; animation: e-logo .55s .55s both; }
+.e-frase { font-family: var(--titulos); color: var(--mostaza); text-transform: uppercase; letter-spacing: .14em; font-size: .85rem; animation: e-sube .4s .95s both; }
+@keyframes e-prende { 0% { transform: scale(0, .004); filter: brightness(7); } 38% { transform: scale(1, .004); filter: brightness(7); } 100% { transform: scale(1, 1); filter: brightness(1); } }
+@keyframes e-logo { from { opacity: 0; letter-spacing: .6em; filter: blur(6px); } }
+@keyframes e-sube { from { opacity: 0; transform: translateY(10px); } }
+@keyframes e-fuera { to { opacity: 0; visibility: hidden; } }
+
+.barras.pulso i { animation: b-salto .5s ease-out; transform-origin: top; }
+.barras.pulso i:nth-child(2) { animation-delay: .05s; } .barras.pulso i:nth-child(3) { animation-delay: .1s; } .barras.pulso i:nth-child(4) { animation-delay: .15s; } .barras.pulso i:nth-child(5) { animation-delay: .2s; }
+@keyframes b-salto { 40% { transform: scaleY(2.6); } }
+.barra > i, .g-barra i { transform-origin: left; animation: llenar .7s cubic-bezier(.2, .8, .2, 1); }
+.columnas i { transform-origin: bottom; animation: crecer .7s cubic-bezier(.2, .8, .2, 1); }
+@keyframes llenar { from { transform: scaleX(0); } } @keyframes crecer { from { transform: scaleY(0); } }
+.tarjeta, .heroe, .ritmo, .banda { animation: e-sube .3s ease-out; }
+.cal-dia { transition: background .15s, transform .1s; } .cal-dia:active, .btn:active, .chip:active span, .fab:active { transform: scale(.95); }
+.fab { transition: transform .12s; }
+
+/* créditos finales que suben como al final de un programa */
+.rodar { position: relative; max-height: 62vh; overflow: hidden; border-radius: 16px; background: var(--tinta); }
+.rodar .creditos { animation: rodar 7s linear both; }
+@keyframes rodar { from { transform: translateY(62vh); } }
+
+/* pantalla «fuera del aire» */
+.reposo { position: fixed; inset: 0; z-index: 55; background: #0d0b0a; cursor: pointer; overflow: hidden; animation: r-entra .6s ease-out; }
+.r-barras { position: absolute; inset: 0 0 22% 0; display: flex; } .r-barras i { flex: 1; }
+.r-barras i:nth-child(1) { background: var(--crema); } .r-barras i:nth-child(2) { background: var(--mostaza); } .r-barras i:nth-child(3) { background: var(--cielo); }
+.r-barras i:nth-child(4) { background: var(--verde2); } .r-barras i:nth-child(5) { background: var(--terra); } .r-barras i:nth-child(6) { background: var(--verde); } .r-barras i:nth-child(7) { background: var(--tinta); }
+.r-x { position: absolute; left: 0; top: 0; animation: r-x 11s linear infinite alternate; } .r-y { animation: r-y 7s linear infinite alternate; }
+.r-logo { width: 200px; height: 110px; border-radius: 55px; background: var(--tinta); color: var(--crema); border: 4px solid var(--crema); display: grid; place-content: center; text-align: center; font-family: var(--titulos); }
+.r-logo b { font-size: 1.7rem; letter-spacing: .16em; padding-left: .16em; } .r-logo span { color: var(--mostaza); font-size: 1.1rem; letter-spacing: .1em; font-variant-numeric: tabular-nums; }
+@keyframes r-x { to { transform: translateX(calc(100vw - 200px)); } } @keyframes r-y { to { transform: translateY(calc(78vh - 110px)); } }
+.r-pie { position: absolute; left: 0; right: 0; bottom: 0; height: 22%; display: grid; place-content: center; text-align: center; gap: 4px; color: var(--crema); font-family: var(--titulos); padding-bottom: var(--abajo); }
+.r-pie b { font-size: 1.3rem; letter-spacing: .2em; animation: r-parpadeo 1.6s steps(2) infinite; } .r-pie span { font-family: var(--texto); opacity: .8; font-size: .9rem; }
+@keyframes r-parpadeo { 50% { opacity: .35; } } @keyframes r-entra { from { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .r-x { left: calc(50% - 100px); top: 30%; }
+}

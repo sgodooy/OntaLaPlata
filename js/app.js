@@ -1,8 +1,9 @@
 import * as C from './core.js';
 import * as DB from './db.js';
 import { iniciarTour, tourActivo } from './tour.js';
+import * as FX from './efectos.js';
 
-const VERSION_APP = 13; // sube con cada publicación; se muestra en Ajustes
+const VERSION_APP = 14; // sube con cada publicación; se muestra en Ajustes
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -29,7 +30,7 @@ async function commit(fn, msg) {
   try {
     const r = fn();
     await DB.guardar(state);
-    cerrarHoja(); render();
+    cerrarHoja(); render(); FX.pulso();
     if (msg) aviso(typeof msg === 'function' ? msg(r) : msg);
     return true;
   } catch (e) {
@@ -79,6 +80,10 @@ function render() {
   const v = { setup: vSetup, inicio: vInicio, movimientos: vMovimientos, presupuestos: vPresupuestos, reservas: vReservas, analisis: vAnalisis, cuentas: vCuentas, ajustes: vAjustes }[ruta] || vInicio;
   $('#vista').innerHTML = (ui.revision ? `<div class="banda ok"><span><b>Modo revisión.</b> Está viendo una copia de seguridad, sin poder cambiarla.</span><button class="btn mini" data-a="salir-revision">Salir</button></div>` : '') + v();
   marcarFechas();
+  if (!setup && ruta === 'inicio') { // el número grande rueda desde el valor anterior
+    const libre = C.resumen(state, hoy()).libre;
+    FX.contar($('#libre'), ui.libreVisto ?? 0, libre, f$); ui.libreVisto = libre;
+  }
   if (setup) chequeoSetup();
   // Primera vez con la app ya configurada: se muestra el recorrido guiado.
   else if (ruta === 'inicio' && !state.config.tourVisto && !ui.revision && !tourActivo()) recorrido();
@@ -346,6 +351,8 @@ function vAjustes() {
     <div class="botones"><button class="btn sec" data-a="csv-movs">Movimientos en CSV</button><button class="btn sec" data-a="csv-pres">Presupuestos en CSV</button></div>
     <div class="botones"><button class="btn sec" data-a="revision">Revisar una copia (solo lectura)</button></div>
     <div class="botones ed"><button class="btn sec" data-a="restaurar">Restaurar una copia</button><button class="btn peligro" data-a="borrar-todo">Borrar todo</button></div></div>
+    <h2>Animaciones</h2><div class="tarjeta"><label class="check"><input type="checkbox" data-anim ${c.animaciones !== false ? 'checked' : ''}>Efectos de televisor: encendido al abrir, números que ruedan y pantalla «fuera del aire» tras un minuto y medio sin tocar la app</label>
+    <button class="btn sec ancho" data-a="ver-reposo">Ver la pantalla «fuera del aire»</button></div>
     <h2>Ayuda</h2><div class="tarjeta"><button class="btn sec ancho" data-a="recorrido">Ver el recorrido otra vez</button></div>
     <p class="suave">Para revisar en el computador: descargue la copia en el celular, pásela al computador y ábrala con «Revisar una copia».</p>
     <h2>Versión</h2><div class="tarjeta"><p>Está usando la versión <b id="version">${VERSION_APP}</b> de VAINAS.</p><button class="btn sec ancho" data-a="actualizar">Buscar actualización</button>
@@ -576,6 +583,7 @@ const acciones = {
   'quitar-cuenta': (el) => { if (confirm('¿Quitar esta cuenta? Si tiene movimientos se archiva para conservar el historial.')) commit(() => C.quitarCuenta(state, el.dataset.id), 'Cuenta quitada.'); },
   recorrido: () => { if (ui.ruta !== 'inicio') { ui.ruta = 'inicio'; history.replaceState(null, '', '#inicio'); render(); } window.scrollTo(0, 0); recorrido(); },
   'poner-fecha': (el) => { const i = el.closest('form').elements.fecha; i.value = el.dataset.f; marcarFechas(); },
+  'ver-reposo': () => FX.fueraDelAire(true),
   cuadre: hojaCuadre,
   'ingreso-inicial': () => { const p = C.ultimoPeriodo(state); abrirHoja('Pago con que empezó la quincena', `<form data-form="ingresoInicial">
     <p class="suave">Es el pago que ya tenía en sus cuentas cuando empezó esta quincena, el ${C.fechaCorta(p.inicio)}. Se anota como ingreso del periodo sin sumarlo otra vez a los saldos. Si registró ese pago con el botón +, déjelo en cero.</p>
@@ -651,7 +659,7 @@ const formularios = {
       if (p.exceso) return `No se me descuadre: se pasó por ${f$(p.exceso)} en ${p.nombre}.`;
       const u = p.unidades ? ` (${p.unidades} ${p.nombre.toLowerCase()})` : '';
       return `${p.pct >= 80 ? '¡Pilas pues! ' : 'Anotado. '}Quedan ${f$(p.resta)} en ${p.nombre}${u}.`;
-    }).then((ok) => { if (ok && cerrada) abrirHoja('Capítulo cerrado', creditos(cerrada) + '<button class="btn ancho" data-a="cerrar" style="margin-top:12px">Seguir</button>'); return ok; });
+    }).then((ok) => { if (ok && cerrada) abrirHoja('Capítulo cerrado', `<div class="rodar">${creditos(cerrada)}</div>` + '<button class="btn ancho" data-a="cerrar" style="margin-top:12px">Seguir</button>'); return ok; });
   },
   pagar: (d) => {
     if (!d.cuentaId) return aviso('Elija una cuenta.', true);
@@ -719,6 +727,7 @@ document.addEventListener('input', (e) => {
 document.addEventListener('change', (e) => {
   const t = e.target;
   if (t.dataset.c) { ui[t.dataset.c] = t.value; render(); }
+  if ('anim' in t.dataset) { const v = t.checked; commit(() => { state.config.animaciones = v; }, v ? 'Animaciones encendidas.' : 'Animaciones apagadas.').then((ok) => { if (ok) FX.usarAnimaciones(v); }); }
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#fondo').hidden) cerrarHoja(); });
 $('#archivo').addEventListener('change', async (e) => {
@@ -744,6 +753,8 @@ window.addEventListener('hashchange', navegar);
 
 // ---------- arranque ----------
 (async () => {
+  FX.usarAnimaciones(FX.animacionesGuardadas());
+  FX.encender();
   // Si los datos no se pueden leer, la app se detiene: seguir desde cero podría sobrescribirlos.
   try {
     state = C.migrar(await DB.cargar());
@@ -756,6 +767,8 @@ window.addEventListener('hashchange', navegar);
     return;
   }
   if (!state) state = C.estadoInicial();
+  FX.usarAnimaciones(state.config.animaciones !== false);
+  FX.vigilarReposo(90000, () => tourActivo() || !state.config.setupDone);
   navegar();
   navigator.storage?.persist?.().catch(() => {});
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
