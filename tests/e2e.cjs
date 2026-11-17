@@ -281,6 +281,27 @@ const n = (t) => parseInt(t.replace(/[^\d-]/g, ''), 10);
   await w.waitForTimeout(1200);
   assert.match(await w.textContent('#libre'), /^-?\$[\d.]+$/);
   assert.equal(n(await w.textContent('#libre')), n(await w.textContent('#en-cuentas')) - n(await w.textContent('#con-dueno')), 'el número termina en el valor exacto');
+  // cada sección tiene su color y cambiar de sección cambia de canal
+  await w.click('#nav a[data-r=presupuestos]'); await w.waitForSelector('.canal');
+  assert.match(await w.textContent('.c-osd'), /CH 03/);
+  assert.equal(await w.evaluate(() => document.body.dataset.ruta), 'presupuestos');
+  const fondo = (sel) => w.evaluate((s) => getComputedStyle(document.querySelector(s)).backgroundColor, sel);
+  await w.waitForTimeout(400);
+  assert.notEqual(await fondo('#nav a[data-r=presupuestos] svg'), await fondo('#nav a[data-r=inicio] svg'));
+  if (SHOTS) await w.screenshot({ path: SHOTS + '/13-colores.png' });
+  // pagar una reserva deja caer el sello
+  await w.click('#nav a[data-r=inicio]');
+  await w.locator('.fila', { hasText: 'Arriendo' }).locator('[data-a=pagar]').first().click();
+  await w.locator('#hoja label.chip', { hasText: 'Bancolombia' }).click(); await w.click('#hoja form button.btn');
+  await w.waitForSelector('.sello'); assert.match(await w.textContent('.sello'), /PAGADO/);
+  if (SHOTS) { await w.waitForTimeout(450); await w.screenshot({ path: SHOTS + '/14-sello.png' }); }
+  // cerrar una quincena sin pasarse: veredicto y papelitos
+  await w.waitForSelector('.sello', { state: 'detached' });
+  await w.click('#fab'); await w.click('#hoja .tabs button[data-t=ingreso]'); await w.fill('#hoja input[name=valor]', '1000000');
+  await w.locator('#hoja label.chip', { hasText: 'Bancolombia' }).click(); await w.check('#hoja input[name=nueva]'); await w.click('#hoja form button.btn:not(.sec)');
+  await w.waitForSelector('.confeti'); assert.match(await w.textContent('#hoja .creditos'), /CAPÍTULO REDONDO/);
+  if (SHOTS) { await w.waitForTimeout(1500); await w.screenshot({ path: SHOTS + '/15-capitulo.png' }); }
+  await w.click('#hoja .cerrar');
   await w.goto(URL + '#ajustes'); await w.click('[data-a=ver-reposo]'); await w.waitForTimeout(1500);
   if (SHOTS) await w.screenshot({ path: SHOTS + '/12-fuera-del-aire.png' });
   await w.click('.reposo');

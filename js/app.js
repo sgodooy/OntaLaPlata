@@ -3,7 +3,7 @@ import * as DB from './db.js';
 import { iniciarTour, tourActivo } from './tour.js';
 import * as FX from './efectos.js';
 
-const VERSION_APP = 14; // sube con cada publicación; se muestra en Ajustes
+const VERSION_APP = 15; // sube con cada publicación; se muestra en Ajustes
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -74,6 +74,7 @@ function render() {
   const setup = !state.config.setupDone;
   document.body.classList.toggle('sin-nav', setup);
   document.body.classList.toggle('revision', ui.revision);
+  document.body.dataset.ruta = setup ? 'setup' : ui.ruta; // cada sección tiene su color
   const ruta = setup ? 'setup' : ui.ruta;
   $('#titulo').textContent = setup ? 'Llevemos las cuentas claras' : TITULOS[ruta];
   document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('activa', a.dataset.r === ruta));
@@ -284,9 +285,17 @@ function calendario() {
     <div class="cal-sem">${['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((d) => `<span>${d}</span>`).join('')}</div><div class="cal-mes">${celdas}</div>
     <div class="leyenda cal-ley"><span><i class="p-pendiente"></i>Pendiente</span><span><i class="p-pagada"></i>Pagado</span><span><i class="p-vencida"></i>Vencido</span><span><i class="p-previsto"></i>Previsto</span><span><i class="p-pago"></i>Día de pago</span></div>${det}</section>`;
 }
+// Cómo salió una quincena ya cerrada: título, comentario y tono.
+function veredicto(c) {
+  if (c.ingresos > 0 && c.gastos > c.ingresos) return ['CAPÍTULO APRETADO', 'Salió más plata de la que entró. En el próximo, pilas con los antojos.', 'mal'];
+  if (!c.pasados.length) return ['CAPÍTULO REDONDO', 'Cerró sin pasarse en ningún presupuesto. Así da gusto llevar las cuentas.', 'bien'];
+  if (c.pasados.length <= 2) return ['CASI, CASI', `Solo se pasó en ${c.pasados.map((p) => p.nombre.toLowerCase()).join(' y ')}. Para el próximo capítulo, ojo ahí.`, 'casi'];
+  return ['CAPÍTULO DESCUADRADO', `Se pasó en ${c.pasados.length} presupuestos. Vale la pena revisarlos antes de arrancar el siguiente.`, 'mal'];
+}
 function creditos(per) {
   const c = C.capitulo(state, per);
-  return `<div class="creditos"><h4>CRÉDITOS FINALES</h4><p>Quincena ${C.nombrePeriodo(state, per)}</p><hr>
+  const v = C.rangoPeriodo(state, per).abierto ? null : veredicto(c);
+  return `<div class="creditos">${v ? `<div class="veredicto v-${v[2]}"><b>${v[0]}</b><span>${esc(v[1])}</span></div>` : ''}<h4>CRÉDITOS FINALES</h4><p>Quincena ${C.nombrePeriodo(state, per)}</p><hr>
     <p>Entraron<br><span class="num">${f$(c.ingresos)}</span></p><p>Salieron<br><span class="num">${f$(c.gastos)}</span></p>
     <p class="suave" style="color:inherit;opacity:.8">De eso, ${f$(c.pagosReservas)} fueron obligaciones fijas${c.sinPresupuesto ? ` y ${f$(c.sinPresupuesto)} gastos no presupuestados` : ''}.</p><hr>
     ${c.pasados.length ? `<p><b>Se pasó en</b><br>${c.pasados.map((p) => `${esc(p.nombre)}: ${f$(p.exceso)}`).join('<br>')}</p>` : '<p><b>No se pasó en ningún presupuesto.</b></p>'}
@@ -659,11 +668,11 @@ const formularios = {
       if (p.exceso) return `No se me descuadre: se pasó por ${f$(p.exceso)} en ${p.nombre}.`;
       const u = p.unidades ? ` (${p.unidades} ${p.nombre.toLowerCase()})` : '';
       return `${p.pct >= 80 ? '¡Pilas pues! ' : 'Anotado. '}Quedan ${f$(p.resta)} en ${p.nombre}${u}.`;
-    }).then((ok) => { if (ok && cerrada) abrirHoja('Capítulo cerrado', `<div class="rodar">${creditos(cerrada)}</div>` + '<button class="btn ancho" data-a="cerrar" style="margin-top:12px">Seguir</button>'); return ok; });
+    }).then((ok) => { if (ok && cerrada && veredicto(C.capitulo(state, cerrada))[2] === 'bien') FX.confeti(); if (ok && cerrada) abrirHoja('Capítulo cerrado', `<div class="rodar">${creditos(cerrada)}</div>` + '<button class="btn ancho" data-a="cerrar" style="margin-top:12px">Seguir</button>'); return ok; });
   },
   pagar: (d) => {
     if (!d.cuentaId) return aviso('Elija una cuenta.', true);
-    return commit(() => C.pagarReserva(state, d.id, { cuentaId: d.cuentaId, valor: C.parseMonto(d.valor), fecha: d.fecha }), 'Pago registrado. La reserva quedó pagada.');
+    return commit(() => C.pagarReserva(state, d.id, { cuentaId: d.cuentaId, valor: C.parseMonto(d.valor), fecha: d.fecha }), 'Pago registrado. La reserva quedó pagada.').then((ok) => { if (ok) FX.sello('PAGADO'); return ok; });
   },
   reserva: (d) => commit(() => C.guardarReserva(state, { id: d.id || undefined, nombre: d.nombre.trim(), monto: C.parseMonto(d.monto), vence: d.vence, estimado: d.estimado === 'on' }), 'Esa platica ya tiene dueño.'),
   obligacion: (d) => commit(() => {
@@ -745,7 +754,10 @@ $('#archivo').addEventListener('change', async (e) => {
 function navegar() {
   if (!state) return;
   const r = location.hash.slice(1);
+  const antes = ui.ruta;
   ui.ruta = TITULOS[r] ? r : 'inicio';
+  if (ui.arrancada && antes !== ui.ruta && state.config.setupDone) FX.canal(Object.keys(TITULOS).indexOf(ui.ruta) + 1, { inicio: 'Inicio', reservas: 'Reservas' }[ui.ruta] || TITULOS[ui.ruta]);
+  ui.arrancada = true;
   if (state.config.setupDone && !ui.revision && C.ponerAlDia(state, hoy())) DB.guardar(state).catch(() => {});
   cerrarHoja(); render(); window.scrollTo(0, 0);
 }

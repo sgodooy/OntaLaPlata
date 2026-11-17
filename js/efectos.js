@@ -46,6 +46,42 @@ export function pulso() {
   b.classList.remove('pulso'); void b.offsetWidth; b.classList.add('pulso');
 }
 
+// Cambio de canal: un golpe de interferencia y el número del canal en una esquina.
+export function canal(num, nombre) {
+  if (!puede()) return;
+  document.querySelector('.canal')?.remove();
+  const el = document.createElement('div');
+  el.className = 'canal'; el.setAttribute('aria-hidden', 'true');
+  el.innerHTML = '<div class="c-ruido"></div><div class="c-osd"><b></b><span></span></div>';
+  el.querySelector('b').textContent = `CH ${String(num).padStart(2, '0')}`;
+  el.querySelector('span').textContent = nombre;
+  document.body.append(el);
+  setTimeout(() => el.remove(), 1300);
+}
+// Sello que cae sobre la pantalla, como el de una factura pagada.
+export function sello(texto) {
+  if (!puede()) return;
+  const el = document.createElement('div');
+  el.className = 'sello'; el.setAttribute('aria-hidden', 'true');
+  el.innerHTML = '<b></b>'; el.firstChild.textContent = texto;
+  document.body.append(el);
+  setTimeout(() => el.remove(), 1500);
+}
+// Papelitos con los colores de las barras, para un capítulo que salió redondo.
+export function confeti() {
+  if (!puede()) return;
+  const el = document.createElement('div');
+  el.className = 'confeti'; el.setAttribute('aria-hidden', 'true');
+  for (let k = 0; k < 36; k++) {
+    const i = document.createElement('i');
+    i.className = `k${k % 5}`;
+    i.style.cssText = `left:${(k * 37) % 100}%;animation-delay:${(k % 9) * 0.12}s;animation-duration:${2.2 + (k % 5) * 0.35}s`;
+    el.append(i);
+  }
+  document.body.append(el);
+  setTimeout(() => el.remove(), 5200);
+}
+
 // Pantalla «fuera del aire»: aparece tras un rato sin tocar la app y de paso tapa las cifras.
 let protector = null, reiniciarReposo = () => {};
 export function fueraDelAire(forzar = false) {
