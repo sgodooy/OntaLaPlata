@@ -2,7 +2,7 @@ import * as C from './core.js';
 import * as DB from './db.js';
 import { iniciarTour, tourActivo } from './tour.js';
 
-const VERSION_APP = 12; // sube con cada publicación; se muestra en Ajustes
+const VERSION_APP = 13; // sube con cada publicación; se muestra en Ajustes
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -197,7 +197,7 @@ function vMovimientos() {
 function tarjetaPres(p, per) {
   const cls = p.pct > 100 ? 'pasado' : p.pct >= 80 ? 'alerta' : '';
   const cat = C.categoria(state, p.categoriaId);
-  const uni = p.unidades !== null && !p.exceso ? ` · Le quedan ${p.unidades} ${esc(cat.nombre.toLowerCase())}` : '';
+  const uni = p.unidades && !p.exceso ? ` · Le quedan ${p.unidades} ${esc(cat.nombre.toLowerCase())}` : '';
   return `<button class="tarjeta pres" data-a="ed-pres" data-cat="${p.categoriaId}" data-per="${per}">
     <div class="cab"><b>${esc(p.nombre)}</b><span class="num">${p.pct.toFixed(1).replace('.', ',')} %</span></div>
     <div class="barra ${cls}"><i style="width:${Math.min(100, p.pct)}%"></i></div>
@@ -292,10 +292,11 @@ function vAnalisis() {
   const per = ui.perAna || P();
   const pres = C.presupuestosDe(state, per);
   let h = navPeriodo('perAna', per) + '<div class="rejilla"><div>';
-  const max1 = Math.max(1, ...pres.map((p) => Math.max(p.total, p.gastado)));
-  h += `<h2>Presupuesto frente a gasto real</h2><div class="tarjeta"><div class="leyenda"><span><i class="plan"></i>Presupuesto</span><span><i></i>Gastado</span><span><i class="mal"></i>Se pasó</span></div>
+  // Cada barra se mide contra su propio presupuesto, igual que en la pestaña Presupuestos.
+  h += `<h2>Presupuesto frente a gasto real</h2><div class="tarjeta"><div class="leyenda"><span><i></i>Gastado</span><span><i class="cerca"></i>Va en 80 % o más</span><span><i class="mal"></i>Se pasó</span></div>
     ${pres.map((p) => `<div class="g-fila"><div class="cab"><span>${esc(p.nombre)}</span><span class="num ${p.exceso ? 'neg' : ''}">${f$(p.gastado)} / ${f$(p.total)}</span></div>
-      <div class="g-barra"><i class="${p.exceso ? 'mal' : ''}" style="width:${(p.gastado / max1) * 100}%"></i><i class="plan" style="width:${(p.total / max1) * 100}%"></i></div></div>`).join('') || '<div class="vacio">Sin presupuestos en esta quincena.</div>'}</div>`;
+      <div class="barra ${p.pct > 100 ? 'pasado' : p.pct >= 80 ? 'alerta' : ''}"><i style="width:${Math.min(100, p.pct)}%"></i></div>
+      <div class="suave">${p.pct.toFixed(1).replace('.', ',')} % · ${p.exceso ? `se pasó por ${f$(p.exceso)}` : `quedan ${f$(p.resta)}`}</div></div>`).join('') || '<div class="vacio">Sin presupuestos en esta quincena.</div>'}</div>`;
   const tipos = [['', 'Todo'], ['habitual', 'Habituales'], ['social', 'Sociales'], ['antojo', 'Antojos'], ['extraordinario', 'Extraordinarios'], ['fijo', 'Fijos']];
   const gc = C.gastoPorCategoria(state, per, ui.tipoAna);
   const max2 = Math.max(1, ...gc.map((g) => g.valor)); const tot2 = gc.reduce((a, g) => a + g.valor, 0);
@@ -648,7 +649,7 @@ const formularios = {
       const p = C.presupuestosDe(state, C.periodoDe(state, m.fecha)).find((x) => x.categoriaId === m.categoriaId);
       if (!p) return 'Anotado como gasto no presupuestado: salió de su plata libre.';
       if (p.exceso) return `No se me descuadre: se pasó por ${f$(p.exceso)} en ${p.nombre}.`;
-      const u = p.unidades !== null ? ` (${p.unidades} ${p.nombre.toLowerCase()})` : '';
+      const u = p.unidades ? ` (${p.unidades} ${p.nombre.toLowerCase()})` : '';
       return `${p.pct >= 80 ? '¡Pilas pues! ' : 'Anotado. '}Quedan ${f$(p.resta)} en ${p.nombre}${u}.`;
     }).then((ok) => { if (ok && cerrada) abrirHoja('Capítulo cerrado', creditos(cerrada) + '<button class="btn ancho" data-a="cerrar" style="margin-top:12px">Seguir</button>'); return ok; });
   },
