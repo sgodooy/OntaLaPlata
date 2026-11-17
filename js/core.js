@@ -379,6 +379,27 @@ export function guardarCategoria(s, datos) {
   return c;
 }
 
+// Quitar una categoría: si ya tiene movimientos se archiva para conservar el historial; si no, se borra.
+export function categoriaUsada(s, id) { return s.movimientos.some((m) => m.categoriaId === id); }
+export function quitarCategoria(s, id) {
+  const c = categoria(s, id);
+  if (!c) return;
+  const actual = ultimoPeriodo(s)?.id;
+  if (categoriaUsada(s, id)) {
+    c.archivada = true;
+    s.presupuestos = s.presupuestos.filter((p) => !(p.categoriaId === id && p.periodo === actual && gastadoCategoria(s, id, actual) === 0));
+  } else {
+    s.categorias = s.categorias.filter((x) => x.id !== id);
+    s.presupuestos = s.presupuestos.filter((p) => p.categoriaId !== id);
+  }
+}
+export function recuperarCategoria(s, id) {
+  const c = categoria(s, id);
+  if (!c) return;
+  if (s.categorias.some((x) => x.id !== id && !x.archivada && x.nombre.toLowerCase() === c.nombre.toLowerCase())) throw new Error('Ya existe una categoría activa con ese nombre.');
+  c.archivada = false;
+}
+
 // ---------- abrir quincena ----------
 // Un pago abre un periodo nuevo: cierra el anterior, copia sus presupuestos y reserva las obligaciones.
 export function abrirPeriodo(s, inicio, { arrastrar = false } = {}) {

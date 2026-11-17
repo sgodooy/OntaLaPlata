@@ -2,7 +2,7 @@ import * as C from './core.js';
 import * as DB from './db.js';
 import { iniciarTour, tourActivo } from './tour.js';
 
-const VERSION_APP = 10; // sube con cada publicación; se muestra en Ajustes
+const VERSION_APP = 11; // sube con cada publicación; se muestra en Ajustes
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -333,7 +333,12 @@ function vAjustes() {
   return `<div class="rejilla"><div><h2>Parámetros</h2><form class="tarjeta ed" data-form="config">
     ${campo('Ingreso quincenal aproximado', inMonto('ingreso', c.ingresoQuincenal))}
     ${campo('Tasa de cambio: pesos por dólar', inMonto('tasa', c.tasaUSD))}
-    <button class="btn ancho">Guardar</button></form></div><div>
+    <button class="btn ancho">Guardar</button></form>
+    <h2>Catálogo de categorías <button class="btn mini ed" data-a="cat-nueva">+ Agregar</button></h2>
+    <div class="tarjeta" id="catalogo">${cats().map((k) => `<div class="fila"><div><div class="nombre">${esc(k.nombre)}</div><div class="suave">${esc(k.tipo)}${k.valorRef ? ` · ${f$(k.valorRef)} por unidad` : ''}${k.comida ? ' · comida' : ''}</div></div>
+      <div class="der ed"><button class="enlace" data-a="cat-editar" data-id="${k.id}">Editar</button> <button class="enlace neg" data-a="cat-quitar" data-id="${k.id}">Quitar</button></div></div>`).join('') || '<div class="vacio">No hay categorías. Agregue la primera.</div>'}
+    ${state.categorias.some((k) => k.archivada) ? `<details><summary>Categorías quitadas</summary>${state.categorias.filter((k) => k.archivada).map((k) => `<div class="fila"><div class="nombre">${esc(k.nombre)}<div class="suave">Sus movimientos se conservan</div></div><button class="btn mini sec ed" data-a="cat-recuperar" data-id="${k.id}">Recuperar</button></div>`).join('')}</details>` : ''}
+    <p class="suave">Estas son las categorías que aparecen al registrar un gasto. El presupuesto de cada una se asigna en Presupuestos.</p></div></div><div>
     <h2>Mis datos</h2><div class="tarjeta">
     <p class="suave">Sus datos viven solo en este dispositivo. ${c.ultimaCopia ? `Última copia de seguridad: ${C.fechaCorta(c.ultimaCopia)}.` : 'Todavía no ha descargado una copia de seguridad.'}</p>
     <div class="botones"><button class="btn" data-a="copia">Descargar copia de seguridad</button></div>
@@ -511,6 +516,15 @@ function hojaPres(catId, per) {
     ${p?.historial.length ? `<details><summary>Historial de cambios</summary>${p.historial.map((x) => `<div class="fila"><span>${C.fechaCorta(x.fecha)}</span><span>${f$(x.de)} → ${f$(x.a)}</span></div>`).join('')}</details>` : ''}
     <div class="botones">${p ? `<button type="button" class="btn peligro" data-a="quitar-pres" data-cat="${catId}" data-per="${per}">Quitar presupuesto</button>` : ''}<button class="btn">Guardar</button></div></form>`);
 }
+function hojaCategoria(k) {
+  const v = k || { nombre: '', tipo: 'habitual', valorRef: 0, comida: false };
+  abrirHoja(k ? 'Editar categoría' : 'Nueva categoría', `<form data-form="categoria"><input type="hidden" name="id" value="${k?.id || ''}">
+    ${campo('Nombre', `<input name="nombre" value="${esc(v.nombre)}" maxlength="50" required>`)}
+    ${campo('Tipo de gasto', `<select name="tipo">${['habitual', 'social', 'antojo', 'extraordinario'].map((t) => `<option ${v.tipo === t ? 'selected' : ''}>${t}</option>`).join('')}</select>`)}
+    ${campo('Valor de referencia por unidad (opcional)', inMonto('valorRef', v.valorRef))}<p class="suave">Por ejemplo, lo que cuesta un almuerzo. Con él le digo cuántos le quedan.</p>
+    <label class="check"><input type="checkbox" name="comida" ${v.comida ? 'checked' : ''}>Es comida (aparece en «Me invitaron»)</label>
+    <button class="btn ancho">${k ? 'Guardar' : 'Agregar'}</button></form>`);
+}
 function hojaCuadre() {
   const sal = C.saldos(state);
   abrirHoja('Cuadre de caja', `<form data-form="cuadre"><p class="suave">Mire cada cuenta y escriba el saldo real. Si hay diferencia, queda un ajuste visible en el historial.</p>
@@ -562,6 +576,13 @@ const acciones = {
   recorrido: () => { if (ui.ruta !== 'inicio') { ui.ruta = 'inicio'; history.replaceState(null, '', '#inicio'); render(); } window.scrollTo(0, 0); recorrido(); },
   'poner-fecha': (el) => { const i = el.closest('form').elements.fecha; i.value = el.dataset.f; marcarFechas(); },
   cuadre: hojaCuadre,
+  'cat-nueva': () => hojaCategoria(null),
+  'cat-editar': (el) => hojaCategoria(C.categoria(state, el.dataset.id)),
+  'cat-quitar': (el) => {
+    const k = C.categoria(state, el.dataset.id), usada = C.categoriaUsada(state, k.id);
+    if (confirm(usada ? `¿Quitar «${k.nombre}»? Ya tiene movimientos: deja de aparecer al registrar, pero su historial se conserva y la puede recuperar.` : `¿Quitar «${k.nombre}»? No tiene movimientos, así que se borra del todo.`)) commit(() => C.quitarCategoria(state, k.id), 'Categoría quitada.');
+  },
+  'cat-recuperar': (el) => commit(() => C.recuperarCategoria(state, el.dataset.id), 'Categoría recuperada.'),
   'limpiar-filtros': () => { ui.filtros = filtrosVacios(); render(); },
   actualizar: async () => {
     aviso('Buscando la versión más nueva…');
@@ -657,6 +678,7 @@ const formularios = {
     if (d.rep === 'una') C.guardarReserva(state, { ...base, vence: d.fecha });
     else C.guardarObligacion(state, { ...base, frecuencia: 'mensual', dia: C.partes(d.fecha).d }, hoy());
   }, 'Esa platica ya tiene dueño.'),
+  categoria: (d) => commit(() => C.guardarCategoria(state, { id: d.id || undefined, nombre: d.nombre, tipo: d.tipo, valorRef: C.parseMonto(d.valorRef), comida: d.comida === 'on' }), d.id ? 'Categoría guardada.' : 'Categoría agregada.'),
   cuenta: (d) => commit(() => C.guardarCuenta(state, { id: d.id || undefined, nombre: d.nombre, saldoInicial: C.parseMonto(d.saldo) }, hoy()), 'Cuenta guardada.'),
   cuadre: (d) => commit(() => {
     const reales = {};

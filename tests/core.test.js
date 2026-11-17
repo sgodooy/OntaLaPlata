@@ -258,3 +258,24 @@ test('duplicados, invitaciones y formato', () => {
   assert.equal(C.parseMonto('$ 15.000'), 15000);
   assert.ok(C.csvMovimientos(s).includes('"Almuerzos"'));
 });
+
+test('catálogo: quitar una categoría sin uso la borra, y con movimientos la archiva', () => {
+  const { s, banco, alm } = base();
+  const libre = inv(s).libre;
+  const nueva = C.guardarCategoria(s, { nombre: 'Mascota', tipo: 'habitual' });
+  C.fijarPresupuesto(s, P, nueva.id, 20000, HOY);
+  assert.equal(inv(s).libre, libre - 20000);
+  assert.throws(() => C.guardarCategoria(s, { nombre: 'mascota' }));
+  C.quitarCategoria(s, nueva.id);
+  assert.equal(C.categoria(s, nueva.id), undefined);
+  assert.equal(inv(s).libre, libre); // su presupuesto deja de apartar plata
+  C.agregarMovimiento(s, { tipo: 'gasto', valor: 15000, fecha: HOY, cuentaId: banco.id, categoriaId: alm.id });
+  const n = s.movimientos.length;
+  C.quitarCategoria(s, alm.id);
+  assert.equal(C.categoria(s, alm.id).archivada, true);
+  assert.equal(s.movimientos.length, n);
+  assert.equal(C.presupuestosDe(s, P)[0].gastado, 15000); // lo ya gastado sigue contando
+  C.recuperarCategoria(s, alm.id);
+  assert.equal(C.categoria(s, alm.id).archivada, false);
+  inv(s);
+});

@@ -197,7 +197,25 @@ const n = (t) => parseInt(t.replace(/[^\d-]/g, ''), 10);
   await real.fill(String(calc - 7000)); await ok2();
   const a3 = await tot();
   assert.equal(a3.cuentas, a2.cuentas - 7000);
+  // catálogo de categorías en Ajustes: agregar, usar, quitar y recuperar
+  await va('ajustes');
+  await q.click('[data-a=cat-nueva]'); await q.fill('#hoja input[name=nombre]', 'Gatos'); await ok2();
+  assert.equal(await q.locator('#catalogo .fila', { hasText: 'Gatos' }).count(), 1);
+  await q.click('#fab');
+  assert.equal(await q.locator('#hoja label.chip', { hasText: 'Gatos' }).count(), 1);
+  await q.click('#hoja .cerrar');
+  await q.locator('#catalogo .fila', { hasText: 'Gatos' }).locator('[data-a=cat-quitar]').click();
+  await q.waitForFunction(() => !document.querySelector('#catalogo').textContent.includes('Gatos'));
+  await q.locator('#catalogo .fila', { hasText: 'Almuerzos' }).locator('[data-a=cat-quitar]').click();
+  await q.waitForSelector('#catalogo details');
+  await q.click('#fab');
+  assert.equal(await q.locator('#hoja label.chip', { hasText: 'Almuerzos' }).count(), 0);
+  await q.click('#hoja .cerrar');
+  await q.click('#catalogo details summary'); await q.click('[data-a=cat-recuperar]');
+  await q.waitForFunction(() => !document.querySelector('#catalogo details'));
+  assert.deepEqual(await tot(), a3);
   // copia de seguridad y modo revisión
+  await va('ajustes');
   await va('ajustes');
   const [dl] = await Promise.all([q.waitForEvent('download'), q.click('[data-a=copia]')]);
   const ruta = await dl.path();
