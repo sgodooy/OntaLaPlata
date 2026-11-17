@@ -148,6 +148,12 @@ const n = (t) => parseInt(t.replace(/[^\d-]/g, ''), 10);
   await va('movimientos'); await q.fill('[data-f=q]', 'amigo');
   assert.equal(await q.locator('#lista-movs button.fila').count(), 2);
   await q.fill('[data-f=q]', '');
+  // un gasto de ayer queda en su propio día, también con el filtro puesto
+  await q.click('#fab'); await q.fill('#hoja input[name=valor]', '12000'); await chip2('Almuerzos', 0); await chip2('Bancolombia', 1);
+  await q.locator('#hoja [data-a=poner-fecha]', { hasText: 'Ayer' }).click(); await ok2();
+  await va('movimientos');
+  const dias = await q.locator('#lista-movs .dia').count();
+  assert.ok(dias >= 2, 'los días salen separados');
   // varias categorías a la vez
   const filas = () => q.locator('#lista-movs button.fila').count();
   const todas = await filas();
@@ -156,6 +162,7 @@ const n = (t) => parseInt(t.replace(/[^\d-]/g, ''), 10);
   const soloAlm = await filas();
   await q.locator('.filtro-cats label.chip', { hasText: 'Gastos fijos' }).click();
   const conFijos = await filas();
+  assert.equal(await q.locator('#lista-movs .dia').count(), 2, 'con filtro los días siguen separados');
   assert.ok(soloAlm >= 1 && conFijos === soloAlm + 1 && conFijos < todas, `filtro de categorías: ${soloAlm}, ${conFijos}, ${todas}`);
   assert.match(await q.textContent('#resumen-cats'), /Categorías \(2\): Almuerzos, Gastos fijos/);
   await q.locator('.filtro-cats label.chip', { hasText: 'Almuerzos' }).click();

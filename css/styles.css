@@ -203,3 +203,6 @@ body::before { content: ""; position: fixed; top: 0; left: 0; right: 0; height: 
 @supports (-webkit-touch-callout: none) {
   input[type="date"].vacia::before { content: "dd/mm/aaaa"; color: var(--gris); }
 }
+
+.dia { display: flex; justify-content: space-between; gap: 8px; }
+.campo-fecha { display: flex; gap: 8px; align-items: flex-end; margin: 12px 0; } .campo-fecha label.campo { flex: 1; margin: 0; min-width: 0; } .campo-fecha .btn { min-height: 46px; }

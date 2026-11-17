@@ -2,7 +2,7 @@ import * as C from './core.js';
 import * as DB from './db.js';
 import { iniciarTour, tourActivo } from './tour.js';
 
-const VERSION_APP = 9; // sube con cada publicación; se muestra en Ajustes
+const VERSION_APP = 10; // sube con cada publicación; se muestra en Ajustes
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -145,6 +145,7 @@ function filaMov(m) {
   const v = m.tipo === 'invitacion' ? '<span class="etiqueta amar">Gratis</span>' : `<span class="num ${signo < 0 ? 'neg' : ''}">${signo > 0 ? '+' : signo < 0 ? '-' : ''}${f$(Math.abs(m.valor))}</span>`;
   return `<button class="fila" data-a="ed-mov" data-id="${m.id}"><div><div class="nombre">${esc(titulo)}</div><div class="suave">${esc(det)}</div></div><div class="der">${v}</div></button>`;
 }
+const diaSemana = (f) => { const { y, m, d } = C.partes(f); return ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'][new Date(Date.UTC(y, m - 1, d)).getUTCDay()]; };
 function listaMovs() {
   const f = ui.filtros; const q = f.q.trim().toLowerCase();
   const l = state.movimientos.filter((m) => {
@@ -163,7 +164,12 @@ function listaMovs() {
   const gastos = l.filter((m) => m.tipo === 'gasto').reduce((a, m) => a + m.valor, 0);
   h += `<div class="suave">${l.length} ${l.length === 1 ? 'movimiento' : 'movimientos'} · gastos por ${f$(gastos)}${quitar ? ' ·' + quitar : ''}</div>`;
   for (const m of l) {
-    if (m.fecha !== dia) { if (dia) h += '</div>'; dia = m.fecha; h += `<div class="dia">${C.fechaCorta(dia)} ${dia.slice(0, 4)}</div><div class="tarjeta">`; }
+    if (m.fecha !== dia) {
+      if (dia) h += '</div>';
+      dia = m.fecha;
+      const delDia = l.filter((x) => x.fecha === dia && x.tipo === 'gasto').reduce((a, x) => a + x.valor, 0);
+      h += `<div class="dia"><span>${diaSemana(dia)} ${C.fechaCorta(dia)} ${dia.slice(0, 4)}</span>${delDia ? `<span>gastos ${f$(delDia)}</span>` : ''}</div><div class="tarjeta">`;
+    }
     h += filaMov(m);
   }
   return h + '</div>';
@@ -429,7 +435,8 @@ function hojaMov(tipo = 'gasto', m = null, pre = {}) {
   const orden = [...cats()].sort((a, b) => (uso[b.id] || 0) - (uso[a.id] || 0));
   const tabs = ed ? '' : `<div class="tabs">${['gasto', 'ingreso', 'transferencia', 'prestamo', 'invitacion'].map((t) => `<button type="button" data-a="tab-mov" data-t="${t}" class="${t === tipo ? 'activa' : ''}">${C.NOMBRE_TIPO[t]}</button>`).join('')}</div>`;
   const valor = tipo === 'invitacion' ? '' : `<div class="valor-grande"><span>$</span><input name="valor" class="monto" inputmode="numeric" autocomplete="off" placeholder="0" value="${miles(Math.abs(v.valor || 0))}" aria-label="Valor" ${tipo === 'ajuste' || tipo === 'cobro' ? 'readonly' : ''}></div>`;
-  const fecha = campo('Fecha', `<input type="date" name="fecha" value="${v.fecha}" required>`);
+  // La fecha va a la vista, con atajos, para que un gasto de otro día no quede anotado como de hoy.
+  const fecha = `<div class="campo-fecha">${campo('Fecha', `<input type="date" name="fecha" value="${v.fecha}" required>`)}<button type="button" class="btn mini sec" data-a="poner-fecha" data-f="${hoy()}">Hoy</button><button type="button" class="btn mini sec" data-a="poner-fecha" data-f="${C.sumarDias(hoy(), -1)}">Ayer</button></div>`;
   const desc = (etq = 'Descripción') => campo(etq, `<input name="descripcion" value="${esc(v.descripcion || '')}" maxlength="120">`);
   const cuentaSel = (etq, name, sel) => `<fieldset><legend>${etq}</legend>${chips(name, cu.concat(state.cuentas.filter((c) => c.archivada && c.id === sel)), sel)}</fieldset>`;
   let cuerpo = '';
@@ -437,7 +444,7 @@ function hojaMov(tipo = 'gasto', m = null, pre = {}) {
     cuerpo = (ed ? '' : '<p class="pista">¿Y esta vaina cuánto costó?</p>') + valor
       + (v.reservaId ? `<p class="suave">Pago de la reserva «${esc(v.descripcion)}». No se imputa a ningún presupuesto.</p>` : `<fieldset><legend>Categoría</legend>${chips('categoriaId', orden.concat(state.categorias.filter((c) => c.archivada && c.id === v.categoriaId)), v.categoriaId)}</fieldset>`)
       + cuentaSel('Sale de', 'cuentaId', selCu)
-      + `<details ${ed ? 'open' : ''}><summary>Más detalles</summary>${fecha}${v.reservaId ? '' : desc()}${campo('Nota', `<textarea name="nota" rows="2" maxlength="300">${esc(v.nota || '')}</textarea>`)}</details>`;
+      + fecha + `<details ${ed ? 'open' : ''}><summary>Más detalles</summary>${v.reservaId ? '' : desc()}${campo('Nota', `<textarea name="nota" rows="2" maxlength="300">${esc(v.nota || '')}</textarea>`)}</details>`;
   } else if (tipo === 'ingreso') {
     const nueva = pre.nueva ?? C.sugerirNuevaQuincena(state, v.fecha);
     cuerpo = valor + cuentaSel('Entra a', 'cuentaId', selCu) + fecha + desc()
@@ -553,6 +560,7 @@ const acciones = {
   'ed-cuenta': (el) => { const c = C.cuenta(state, el.dataset.id); abrirHoja('Renombrar cuenta', `<form data-form="cuenta"><input type="hidden" name="id" value="${c.id}">${campo('Nombre', `<input name="nombre" value="${esc(c.nombre)}" maxlength="40" required>`)}<button class="btn ancho">Guardar</button></form>`); },
   'quitar-cuenta': (el) => { if (confirm('¿Quitar esta cuenta? Si tiene movimientos se archiva para conservar el historial.')) commit(() => C.quitarCuenta(state, el.dataset.id), 'Cuenta quitada.'); },
   recorrido: () => { if (ui.ruta !== 'inicio') { ui.ruta = 'inicio'; history.replaceState(null, '', '#inicio'); render(); } window.scrollTo(0, 0); recorrido(); },
+  'poner-fecha': (el) => { const i = el.closest('form').elements.fecha; i.value = el.dataset.f; marcarFechas(); },
   cuadre: hojaCuadre,
   'limpiar-filtros': () => { ui.filtros = filtrosVacios(); render(); },
   actualizar: async () => {
