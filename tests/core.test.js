@@ -326,3 +326,24 @@ test('editar una obligación no suelta la reserva que ya tiene abonos', () => {
   assert.equal(s.reservas.filter((x) => x.obligacionId === cel.obligacionId && x.estado === 'pendiente').length, 1);
   assert.equal(inv(s).libre, libre - 10000);
 });
+
+test('una obligación se puede pasar a categoría con presupuesto sin perder lo abonado', () => {
+  const { s, banco } = base();
+  C.ponerAlDia(s, '2026-11-29');
+  const serv = C.guardarReserva(s, { nombre: 'Servicios públicos', monto: 100000, vence: '2026-11-25' });
+  serv.obligacionId = s.obligaciones.find((o) => o.nombre === 'Servicios públicos').id;
+  C.pagarReserva(s, serv.id, { cuentaId: banco.id, valor: 40000, fecha: HOY });
+  const antes = inv(s), saldo = C.saldos(s)[banco.id], n = s.movimientos.length;
+  const cat = C.obligacionACategoria(s, serv.obligacionId, 100000);
+  const r = inv(s);
+  assert.equal(s.obligaciones.some((o) => o.nombre === 'Servicios públicos'), false);
+  assert.equal(s.reservas.some((x) => x.id === serv.id), false);
+  assert.equal(s.movimientos.length, n); assert.equal(C.saldos(s)[banco.id], saldo); // los abonos no se duplican
+  const p = C.presupuestosDe(s, P).find((x) => x.categoriaId === cat.id);
+  assert.equal(p.total, 100000); assert.equal(p.gastado, 40000); assert.equal(p.resta, 60000);
+  assert.equal(r.libre, antes.libre); // lo que estaba apartado sigue apartado, ahora como presupuesto
+  assert.equal(r.reservasPend, antes.reservasPend - 60000); assert.equal(r.presupRest, antes.presupRest + 60000);
+  C.abrirPeriodo(s, '2026-11-30');
+  assert.equal(C.presupuestosDe(s, '2026-11-30').find((x) => x.categoriaId === cat.id).monto, 100000); // se copia a la siguiente
+  assert.equal(s.reservas.some((x) => x.nombre === 'Servicios públicos' && x.estado === 'pendiente'), false); // ya no se reserva
+});

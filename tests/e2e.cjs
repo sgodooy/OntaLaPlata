@@ -242,6 +242,15 @@ const n = (t) => parseInt(t.replace(/[^\d-]/g, ''), 10);
   await real.fill(String(calc - 7000)); await ok2();
   const a3 = await tot();
   assert.equal(a3.cuentas, a2.cuentas - 7000);
+  // pasar Servicios públicos de obligación a presupuesto
+  await va('reservas');
+  await q.locator('.fila', { hasText: 'Servicios públicos' }).locator('[data-a=ed-ob]').click();
+  await q.click('#hoja [data-a=ob-a-presupuesto]'); await q.fill('#hoja input[name=monto]', '50000'); await ok2();
+  assert.equal(await q.locator('.fila', { hasText: 'Servicios públicos' }).locator('[data-a=ed-ob]').count(), 0);
+  await va('presupuestos');
+  assert.match(await q.locator('.pres[data-a=ed-pres]', { hasText: 'Servicios públicos' }).textContent(), /de \$50\.000/);
+  await q.click('#fab'); assert.equal(await q.locator('#hoja label.chip', { hasText: 'Servicios públicos' }).count(), 1); await q.click('#hoja .cerrar');
+  a3.libre -= 50000;
   // catálogo de categorías en Ajustes: agregar, usar, quitar y recuperar
   await va('ajustes');
   await q.click('[data-a=cat-nueva]'); await q.fill('#hoja input[name=nombre]', 'Gatos'); await ok2();
@@ -288,7 +297,7 @@ const n = (t) => parseInt(t.replace(/[^\d-]/g, ''), 10);
   await q.waitForSelector('#hoja .creditos'); await q.click('#hoja [data-a=cerrar]');
   assert.match(await q.textContent('#vista'), /Quincena desde el/);
   await va('presupuestos'); assert.equal(await q.locator('[data-a=deshacer-periodo]').count(), 1);
-  assert.equal(await q.locator('.pres[data-a=ed-pres]').count(), 3);
+  assert.equal(await q.locator('.pres[data-a=ed-pres]').count(), 4); // incluye Servicios públicos, que ya es presupuesto
   const a5 = await tot(); assert.equal(a5.cuentas, a4.cuentas + 1000000);
   // los días del calendario y los campos de fecha caben en su tarjeta, también en celulares angostos
   for (const ancho of [320, 375, 390]) {

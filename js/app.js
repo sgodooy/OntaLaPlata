@@ -3,7 +3,7 @@ import * as DB from './db.js';
 import { iniciarTour, tourActivo } from './tour.js';
 import * as FX from './efectos.js';
 
-const VERSION_APP = 19; // sube con cada publicación; se muestra en Ajustes
+const VERSION_APP = 20; // sube con cada publicación; se muestra en Ajustes
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -568,7 +568,8 @@ function hojaObligacion(o) {
     <p class="suave">Mensual: día del mes (1 a 31); se reserva completa en la quincena en que vence. Quincenal: día dentro de la quincena (1 a 14). Los dólares se convierten con la tasa de Ajustes.</p>
     <label class="check"><input type="checkbox" name="estimado" ${v.estimado ? 'checked' : ''}>El valor es un estimado</label>
     <label class="check"><input type="checkbox" name="activa" ${v.activa ? 'checked' : ''}>Activa</label>
-    <div class="botones">${o ? `<button type="button" class="btn peligro" data-a="borrar-ob" data-id="${o.id}">Eliminar</button>` : ''}<button class="btn">Guardar</button></div></form>`);
+    <div class="botones">${o ? `<button type="button" class="btn peligro" data-a="borrar-ob" data-id="${o.id}">Eliminar</button>` : ''}<button class="btn">Guardar</button></div>
+    ${o ? `<button type="button" class="btn sec ancho" data-a="ob-a-presupuesto" data-id="${o.id}" style="margin-top:10px">Pasarla a presupuesto</button><p class="suave">Para gastos que cambian y se pagan en varias partes, como los servicios: deja de reservarse con fecha y se controla como una categoría.</p>` : ''}</form>`);
 }
 function hojaPres(catId, per) {
   const c = C.categoria(state, catId); const p = C.presupuestosDe(state, per).find((x) => x.categoriaId === catId);
@@ -627,6 +628,14 @@ const acciones = {
   'reactivar-reserva': (el) => commit(() => C.reactivarReserva(state, el.dataset.id), 'Esa platica ya tiene dueño otra vez.'),
   'nueva-ob': () => hojaObligacion(null),
   'ed-ob': (el) => hojaObligacion(state.obligaciones.find((o) => o.id === el.dataset.id)),
+  'ob-a-presupuesto': (el) => {
+    const o = state.obligaciones.find((x) => x.id === el.dataset.id), valor = C.montoObligacion(o, state.config.tasaUSD);
+    abrirHoja(`${o.nombre} a presupuesto`, `<form data-form="obAPresupuesto"><input type="hidden" name="id" value="${o.id}">
+      <p>«${esc(o.nombre)}» deja de ser una obligación con fecha y pasa a ser una categoría con presupuesto, como Almuerzos o Mercado.</p>
+      ${campo('Presupuesto de cada quincena', inMonto('monto', o.frecuencia === 'mensual' ? Math.round(valor / 2) : valor))}
+      <p class="suave">Se aplica desde esta quincena y se copia a las siguientes. Lo que ya abonó a su reserva pendiente queda como gasto de la categoría; los pagos ya cerrados no cambian. Ya no aparecerá en el calendario.</p>
+      <button class="btn ancho">Pasar a presupuesto</button></form>`);
+  },
   'borrar-ob': (el) => { if (confirm('¿Eliminar esta obligación y sus reservas pendientes? Los pagos ya hechos se conservan.')) commit(() => C.eliminarObligacion(state, el.dataset.id), 'Obligación eliminada.'); },
   'nueva-deuda': () => abrirHoja('Me deben', `<form data-form="deuda">${campo('¿Quién le debe?', '<input name="persona" maxlength="60" required>')}${campo('Valor', inMonto('valor'))}${campo('Concepto', '<input name="concepto" maxlength="120">')}${campo('Fecha', `<input type="date" name="fecha" value="${hoy()}" required>`)}
     <p class="suave">Si le está prestando plata de sus cuentas, use mejor «Presté plata» en el botón +.</p><button class="btn ancho">Guardar</button></form>`),
@@ -755,6 +764,7 @@ const formularios = {
     else C.guardarObligacion(state, { ...base, frecuencia: 'mensual', dia: C.partes(d.fecha).d }, hoy());
   }, 'Esa platica ya tiene dueño.'),
   categoria: (d) => commit(() => C.guardarCategoria(state, { id: d.id || undefined, nombre: d.nombre, tipo: d.tipo, valorRef: C.parseMonto(d.valorRef), comida: d.comida === 'on' }), d.id ? 'Categoría guardada.' : 'Categoría agregada.'),
+  obAPresupuesto: (d) => commit(() => C.obligacionACategoria(state, d.id, C.parseMonto(d.monto)), (c) => `Listo: «${c.nombre}» ahora se controla en Presupuestos.`),
   ingresoInicial: (d) => commit(() => C.fijarIngresoInicial(state, C.ultimoPeriodo(state).id, C.parseMonto(d.valor)), 'Guardado.'),
   cuenta: (d) => commit(() => C.guardarCuenta(state, { id: d.id || undefined, nombre: d.nombre, saldoInicial: C.parseMonto(d.saldo), color: d.color, icono: d.icono || '' }, hoy()), 'Cuenta guardada.'),
   cuadre: (d) => commit(() => {

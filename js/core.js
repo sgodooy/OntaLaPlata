@@ -356,6 +356,26 @@ export function pagarReserva(s, id, { cuentaId, valor, fecha, cerrar = false }) 
   if (cerrar || abonado(s, r) >= r.monto) r.estado = 'pagada';
   return m;
 }
+// Pasa una obligación a categoría con presupuesto: deja de reservarse con fecha y se controla como cualquier gasto.
+// Lo ya abonado a sus reservas pendientes queda como gasto de la categoría nueva; lo ya pagado y cerrado no se toca.
+export function obligacionACategoria(s, id, montoQuincena) {
+  const o = s.obligaciones.find((x) => x.id === id);
+  if (!o) throw new Error('La obligación ya no existe.');
+  if (!(Number.isInteger(montoQuincena) && montoQuincena >= 0)) throw new Error('El presupuesto no es válido.');
+  const u = ultimoPeriodo(s);
+  let cat = s.categorias.find((c) => !c.archivada && c.nombre.toLowerCase() === o.nombre.toLowerCase());
+  if (!cat) cat = guardarCategoria(s, { nombre: o.nombre, grupo: 'Hogar', tipo: 'habitual' });
+  for (const r of s.reservas.filter((x) => x.obligacionId === id && x.estado === 'pendiente')) {
+    for (const m of abonosDe(s, r)) { delete m.reservaId; m.categoriaId = cat.id; }
+    s.reservas = s.reservas.filter((x) => x !== r);
+  }
+  s.obligaciones = s.obligaciones.filter((x) => x !== o);
+  if (u) {
+    const p = s.presupuestos.find((x) => x.periodo === u.id && x.categoriaId === cat.id);
+    fijarPresupuesto(s, u.id, cat.id, (p ? p.monto : 0) + montoQuincena);
+  }
+  return cat;
+}
 // Da por saldada una reserva con abonos: lo que faltaba vuelve a la plata libre.
 export function saldarReserva(s, id) {
   const r = buscar(s.reservas, id);
