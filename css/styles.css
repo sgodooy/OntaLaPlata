@@ -318,3 +318,6 @@ h2 { border-left: 5px solid var(--acento); padding-left: 8px; }
 input[type="color"] { padding: 4px; height: 46px; }
 
 @media (min-width: 900px) { .barras { z-index: 9; } }
+
+i.p-parcial { background: linear-gradient(90deg, var(--verde2) 50%, var(--mostaza) 50%); }
+.mini-barra { height: 7px; margin: 6px 0 2px; max-width: 220px; }

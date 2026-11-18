@@ -92,6 +92,34 @@ const n = (t) => parseInt(t.replace(/[^\d-]/g, ''), 10);
   assert.equal(t4.cuentas, t3.cuentas - 350000); assert.equal(t4.libre, t3.libre);
   assert.equal(await p.locator('.fila', { hasText: 'Arriendo' }).locator('[data-a=pagar]').count(), 0);
 
+  // 4b. servicios por partes: abonar, abonar y dar por saldada, desde el calendario
+  await ir('reservas');
+  await p.click('[data-a=nueva-reserva]'); await p.fill('#hoja input[name=nombre]', 'Servicios del mes'); await p.fill('#hoja input[name=monto]', '100000');
+  await p.fill('#hoja input[name=vence]', '2026-11-28'); await guardar();
+  await p.click('.cal-dia[data-f="2026-11-28"]');
+  const fila = p.locator('.cal-det .fila', { hasText: 'Servicios del mes' });
+  await fila.locator('[data-a=pagar]').click(); await p.fill('#hoja input[name=valor]', '40000'); await chip('Bancolombia', 0);
+  await p.click('#hoja button[value=abonar]'); await p.waitForSelector('#fondo', { state: 'hidden' });
+  assert.match(await fila.textContent(), /Abonado \$40\.000 de \$100\.000 · faltan \$60\.000/);
+  assert.equal(await p.locator('.cal-dia[data-f="2026-11-28"] i.p-parcial').count(), 1);
+  await ir('inicio'); const t4b = await leer();
+  assert.equal(t4b.cuentas, t4.cuentas - 40000); assert.equal(t4b.libre, t4.libre - 100000); // la reserva nueva aparta 100.000; el abono no vuelve a restar
+  await ir('reservas'); await p.click('.cal-dia[data-f="2026-11-28"]');
+  await fila.locator('[data-a=pagar]').click(); await p.fill('#hoja input[name=valor]', '50000'); await chip('Bancolombia', 0);
+  await p.click('#hoja button[value=cerrar]'); await p.waitForSelector('#fondo', { state: 'hidden' });
+  assert.equal(await p.locator('.cal-dia[data-f="2026-11-28"] i.p-pagada').count(), 1);
+  await ir('inicio'); const t4c = await leer();
+  assert.equal(t4c.cuentas, t4.cuentas - 90000); assert.equal(t4c.libre, t4.libre - 90000); // saldada en 90.000: los 10.000 que sobraron vuelven a lo libre
+  await ir('movimientos'); await p.fill('[data-f=q]', 'Servicios del mes');
+  assert.equal(await p.locator('#lista-movs button.fila').count(), 2);
+  assert.match(await p.textContent('#lista-movs'), /Gasto fijo \(reserva\)/);
+  await p.fill('[data-f=q]', '');
+  // la prueba sigue con los totales de antes: se deshacen los dos abonos
+  for (let k = 0; k < 2; k++) { await p.locator('#lista-movs button.fila', { hasText: 'Servicios del mes' }).first().click(); await p.click('#hoja [data-a=borrar-mov]'); await p.waitForSelector('#fondo', { state: 'hidden' }); }
+  await ir('reservas'); await p.click('.cal-dia[data-f="2026-11-28"]');
+  await fila.locator('[data-a=ed-reserva]').click(); await p.click('#hoja [data-a=cancelar-reserva]'); await p.waitForSelector('#fondo', { state: 'hidden' });
+  await ir('inicio'); assert.deepEqual(await leer(), t4);
+
   // 5. prestar y recibir la deuda
   await p.click('#fab'); await p.click('#hoja .tabs button[data-t=prestamo]'); await p.fill('#hoja input[name=valor]', '50000');
   await p.fill('#hoja input[name=persona]', 'Un amigo'); await chip('Bancolombia', 0); await guardar();

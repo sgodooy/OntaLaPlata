@@ -3,7 +3,7 @@ import * as DB from './db.js';
 import { iniciarTour, tourActivo } from './tour.js';
 import * as FX from './efectos.js';
 
-const VERSION_APP = 18; // sube con cada publicación; se muestra en Ajustes
+const VERSION_APP = 19; // sube con cada publicación; se muestra en Ajustes
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -124,10 +124,18 @@ async function iconoDesdeArchivo(file) {
 }
 function filaReserva(r) {
   const vencida = r.estado === 'pendiente' && r.vence < hoy();
-  const est = r.estado === 'pagada' ? '<span class="etiqueta verde">Pagada</span>' : r.estado === 'cancelada' ? '<span class="etiqueta">Cancelada</span>' : vencida ? '<span class="etiqueta rojo">Vencida</span>' : '';
+  const ab = C.abonado(state, r), falta = C.faltaReserva(state, r);
+  const est = r.estado === 'pagada' ? '<span class="etiqueta verde">Pagada</span>' : r.estado === 'cancelada' ? '<span class="etiqueta">Cancelada</span>' : vencida ? '<span class="etiqueta rojo">Vencida</span>' : ab ? '<span class="etiqueta amar">Abonada</span>' : '';
+  const prog = ab && r.estado === 'pendiente' ? `<div class="barra mini-barra"><i style="width:${Math.min(100, (ab / r.monto) * 100)}%"></i></div><div class="suave">Abonado ${f$(ab)} de ${f$(r.monto)} · faltan ${f$(falta)}</div>` : '';
   return `<div class="fila"><div><div class="nombre">${esc(r.nombre)} ${est}</div>
-    <div class="suave">${r.estado === 'pendiente' ? 'Vence' : 'Vencía'} el ${C.fechaCorta(r.vence)}${r.estimado ? ' · estimado' : ''}${r.moneda === 'USD' ? ` · USD ${r.montoUSD} a ${f$(r.tasa)}` : ''}</div></div>
-    <div class="der">${num(r.monto)}<div class="ed">${r.estado === 'pendiente' ? `<button class="btn mini" data-a="pagar" data-id="${r.id}">Pagar</button> ` : ''}${r.estado !== 'pagada' ? `<button class="enlace" data-a="ed-reserva" data-id="${r.id}">Editar</button>` : ''}</div></div></div>`;
+    <div class="suave">${r.estado === 'pendiente' ? 'Vence' : 'Vencía'} el ${C.fechaCorta(r.vence)}${r.estimado ? ' · estimado' : ''}${r.moneda === 'USD' ? ` · USD ${r.montoUSD} a ${f$(r.tasa)}` : ''}${r.estado === 'pagada' && ab !== r.monto ? ` · pagado ${f$(ab)}` : ''}</div>${prog}</div>
+    <div class="der">${num(r.estado === 'pendiente' ? falta : r.monto)}<div class="ed">${r.estado === 'pendiente' ? `<button class="btn mini" data-a="pagar" data-id="${r.id}">${ab ? 'Abonar' : 'Pagar'}</button> ` : ''}<button class="enlace" data-a="ed-reserva" data-id="${r.id}">${r.estado === 'pagada' ? 'Ver' : 'Editar'}</button></div></div></div>`;
+}
+function listaAbonos(r) {
+  const ab = C.abonosDe(state, r);
+  if (!ab.length) return '';
+  return `<h2>Abonos</h2><div class="tarjeta">${ab.map((m) => `<button type="button" class="fila" data-a="ed-mov" data-id="${m.id}"><div><div class="nombre">${C.fechaCorta(m.fecha)}</div><div class="suave">${esc(C.cuenta(state, m.cuentaId)?.nombre || '')}</div></div><span class="num neg">-${f$(m.valor)}</span></button>`).join('')}
+    <div class="fila"><b>Total abonado</b>${num(C.abonado(state, r))}</div></div>`;
 }
 
 function vInicio() {
@@ -172,7 +180,7 @@ function filaMov(m) {
   const cat = C.categoria(state, m.categoriaId)?.nombre;
   let titulo, det, signo = 0;
   switch (m.tipo) {
-    case 'gasto': titulo = m.descripcion || cat || 'Gasto'; det = `${m.reservaId ? 'Pago de reserva' : (cat || 'Sin categoría')} · ${cu}`; signo = -1; break;
+    case 'gasto': titulo = m.descripcion || cat || 'Gasto'; det = `${m.reservaId ? 'Gasto fijo (reserva)' : (cat || 'Sin categoría')} · ${cu}`; signo = -1; break;
     case 'ingreso': titulo = m.descripcion || 'Ingreso'; det = `Ingreso · ${cu}`; signo = 1; break;
     case 'transferencia': titulo = m.descripcion || 'Transferencia'; det = `${cu} → ${C.cuenta(state, m.cuentaDestinoId)?.nombre}`; break;
     case 'prestamo': titulo = `Le presté a ${m.persona}`; det = `${cu}${m.descripcion ? ' · ' + m.descripcion : ''}`; signo = -1; break;
@@ -315,7 +323,7 @@ function calendario() {
   }
   return `<section class="tarjeta cal" id="calendario"><div class="cal-cab"><button class="btn mini sec" data-a="cal-mes" data-d="-1" aria-label="Mes anterior">‹</button><h2>${MESES_L[m - 1]} ${y}</h2><button class="btn mini sec" data-a="cal-mes" data-d="1" aria-label="Mes siguiente">›</button></div>
     <div class="cal-sem">${['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((d) => `<span>${d}</span>`).join('')}</div><div class="cal-mes">${celdas}</div>
-    <div class="leyenda cal-ley"><span><i class="p-pendiente"></i>Pendiente</span><span><i class="p-pagada"></i>Pagado</span><span><i class="p-vencida"></i>Vencido</span><span><i class="p-previsto"></i>Previsto</span><span><i class="p-pago"></i>Día de pago</span></div>${det}</section>`;
+    <div class="leyenda cal-ley"><span><i class="p-pendiente"></i>Pendiente</span><span><i class="p-parcial"></i>Abonado</span><span><i class="p-pagada"></i>Pagado</span><span><i class="p-vencida"></i>Vencido</span><span><i class="p-previsto"></i>Previsto</span><span><i class="p-pago"></i>Día de pago</span></div>${det}</section>`;
 }
 // Cómo salió una quincena ya cerrada: título, comentario y tono.
 function veredicto(c) {
@@ -527,20 +535,27 @@ function hojaMov(tipo = 'gasto', m = null, pre = {}) {
   if (!ed) $('#hoja input[name=valor]')?.focus();
 }
 function hojaPagar(r) {
-  abrirHoja(`Pagar: ${r.nombre}`, `<form data-form="pagar"><input type="hidden" name="id" value="${r.id}">
-    <div class="valor-grande"><span>$</span><input name="valor" class="monto" inputmode="numeric" value="${miles(r.monto)}" aria-label="Valor pagado"></div>
-    <p class="suave">${r.estimado || r.moneda === 'USD' ? 'El valor reservado era un estimado: escriba lo que pagó de verdad.' : 'Confirme el valor que pagó.'} La diferencia se ajusta sola en su plata libre.</p>
+  const ab = C.abonado(state, r), falta = C.faltaReserva(state, r);
+  abrirHoja(`${ab ? 'Abonar' : 'Pagar'}: ${r.nombre}`, `<form data-form="pagar"><input type="hidden" name="id" value="${r.id}">
+    <p class="suave">${ab ? `Ya abonó ${f$(ab)} de ${f$(r.monto)}. Faltan ${f$(falta)}.` : `Reservado: ${f$(r.monto)}${r.estimado || r.moneda === 'USD' ? ', era un estimado' : ''}.`}</p>
+    <div class="valor-grande"><span>$</span><input name="valor" class="monto" inputmode="numeric" value="${miles(falta || r.monto)}" aria-label="Valor pagado"></div>
     <fieldset><legend>Sale de</legend>${chips('cuentaId', activas(), state.config.ultimaCuenta || activas()[0]?.id)}</fieldset>
-    ${campo('Fecha del pago', `<input type="date" name="fecha" value="${hoy()}" required>`)}<button class="btn ancho">Registrar pago</button></form>`);
+    ${campo('Fecha del pago', `<input type="date" name="fecha" value="${hoy()}" required>`)}
+    <button class="btn ancho" name="accion" value="cerrar">Pagar y dar por saldada</button>
+    <button class="btn sec ancho" name="accion" value="abonar" style="margin-top:8px">Solo abonar: todavía falta</button>
+    <p class="suave">«Saldada» cierra la reserva: si pagó menos de lo reservado, la diferencia vuelve a su plata libre. Con «Solo abonar», lo que falta sigue apartado; si el abono completa el valor, se cierra sola.</p></form>`);
 }
 function hojaReserva(r) {
   const v = r || { nombre: '', monto: 0, vence: hoy(), estimado: false };
+  const ab = r ? C.abonado(state, r) : 0;
+  if (r?.estado === 'pagada') return abrirHoja(r.nombre, `<p>Reserva pagada. Valor reservado: ${num(r.monto)}.</p>${listaAbonos(r)}<p class="suave">Si borra un abono, la reserva vuelve a quedar pendiente.</p>`);
   abrirHoja(r ? 'Editar reserva' : 'Nueva reserva', `<form data-form="reserva"><input type="hidden" name="id" value="${r?.id || ''}">
     ${r ? '' : '<p class="suave">Una reserva de una sola vez. Para algo que se repite, cree una obligación periódica.</p>'}
     ${campo('Nombre', `<input name="nombre" value="${esc(v.nombre)}" maxlength="60" required>`)}${campo('Valor en pesos', inMonto('monto', v.monto))}
     ${campo('Vence el', `<input type="date" name="vence" value="${v.vence}" required>`)}
     <label class="check"><input type="checkbox" name="estimado" ${v.estimado ? 'checked' : ''}>El valor es un estimado</label>
-    <div class="botones">${r?.estado === 'pendiente' ? `<button type="button" class="btn peligro" data-a="cancelar-reserva" data-id="${r.id}">Cancelar reserva</button>` : ''}${r?.estado === 'cancelada' ? `<button type="button" class="btn sec" data-a="reactivar-reserva" data-id="${r.id}">Reactivar</button>` : ''}<button class="btn">Guardar</button></div></form>`);
+    ${r ? listaAbonos(r) : ''}
+    <div class="botones">${r?.estado === 'pendiente' && !ab ? `<button type="button" class="btn peligro" data-a="cancelar-reserva" data-id="${r.id}">Cancelar reserva</button>` : ''}${r?.estado === 'pendiente' && ab ? `<button type="button" class="btn sec" data-a="saldar-reserva" data-id="${r.id}">Dar por saldada</button>` : ''}${r?.estado === 'cancelada' ? `<button type="button" class="btn sec" data-a="reactivar-reserva" data-id="${r.id}">Reactivar</button>` : ''}<button class="btn">Guardar</button></div></form>`);
 }
 function hojaObligacion(o) {
   const v = o || { nombre: '', monto: 0, montoUSD: 0, moneda: 'COP', frecuencia: 'mensual', dia: 1, estimado: false, activa: true };
@@ -607,6 +622,7 @@ const acciones = {
   pagar: (el) => hojaPagar(state.reservas.find((r) => r.id === el.dataset.id)),
   'nueva-reserva': () => hojaReserva(null),
   'ed-reserva': (el) => hojaReserva(state.reservas.find((r) => r.id === el.dataset.id)),
+  'saldar-reserva': (el) => commit(() => C.saldarReserva(state, el.dataset.id), 'Saldada. Lo que faltaba volvió a su plata libre.').then((ok) => { if (ok) FX.sello('PAGADO'); return ok; }),
   'cancelar-reserva': (el) => commit(() => C.cancelarReserva(state, el.dataset.id), 'Reserva cancelada: esa plata volvió a estar libre.'),
   'reactivar-reserva': (el) => commit(() => C.reactivarReserva(state, el.dataset.id), 'Esa platica ya tiene dueño otra vez.'),
   'nueva-ob': () => hojaObligacion(null),
@@ -708,7 +724,10 @@ const formularios = {
   },
   pagar: (d) => {
     if (!d.cuentaId) return aviso('Elija una cuenta.', true);
-    return commit(() => C.pagarReserva(state, d.id, { cuentaId: d.cuentaId, valor: C.parseMonto(d.valor), fecha: d.fecha }), 'Pago registrado. La reserva quedó pagada.').then((ok) => { if (ok) FX.sello('PAGADO'); return ok; });
+    const r = state.reservas.find((x) => x.id === d.id);
+    return commit(() => C.pagarReserva(state, d.id, { cuentaId: d.cuentaId, valor: C.parseMonto(d.valor), fecha: d.fecha, cerrar: d.accion !== 'abonar' }),
+      () => (r.estado === 'pagada' ? 'Pago registrado. La reserva quedó saldada.' : `Abono registrado. Faltan ${f$(C.faltaReserva(state, r))}, que siguen apartados.`))
+      .then((ok) => { if (ok) FX.sello(r.estado === 'pagada' ? 'PAGADO' : 'ABONADO'); return ok; });
   },
   reserva: (d) => commit(() => C.guardarReserva(state, { id: d.id || undefined, nombre: d.nombre.trim(), monto: C.parseMonto(d.monto), vence: d.vence, estimado: d.estimado === 'on' }), 'Esa platica ya tiene dueño.'),
   obligacion: (d) => commit(() => {
@@ -755,7 +774,9 @@ document.addEventListener('click', (e) => {
 document.addEventListener('submit', (e) => {
   const f = e.target.closest('form[data-form]'); if (!f) return;
   e.preventDefault();
-  formularios[f.dataset.form]?.(Object.fromEntries(new FormData(f)));
+  const datos = Object.fromEntries(new FormData(f));
+  if (e.submitter?.name) datos[e.submitter.name] = e.submitter.value;
+  formularios[f.dataset.form]?.(datos);
 });
 document.addEventListener('input', (e) => {
   const t = e.target;

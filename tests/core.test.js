@@ -67,7 +67,7 @@ test('4 y 5. pagar una reserva descuenta una sola vez y ajusta la diferencia', (
   assert.equal(C.presupuestosDe(s, P)[0].gastado, 0); // no se imputa a presupuestos
   assert.throws(() => C.pagarReserva(s, arriendo.id, { cuentaId: banco.id, valor: 300000, fecha: HOY }));
   const tigo = s.reservas.find((x) => x.nombre === 'Celular e internet');
-  C.pagarReserva(s, tigo.id, { cuentaId: banco.id, valor: 70000, fecha: HOY });
+  C.pagarReserva(s, tigo.id, { cuentaId: banco.id, valor: 70000, fecha: HOY, cerrar: true });
   r = inv(s);
   assert.equal(r.libre, antes.libre + 10000); // pagó menos de lo reservado
   // eliminar el pago devuelve la reserva a pendiente
@@ -285,4 +285,44 @@ test('catálogo: quitar una categoría sin uso la borra, y con movimientos la ar
   C.recuperarCategoria(s, alm.id);
   assert.equal(C.categoria(s, alm.id).archivada, false);
   inv(s);
+});
+
+test('abonos: una obligación se paga por partes sin descontar dos veces', () => {
+  const { s, banco, nequi } = base();
+  const serv = C.guardarReserva(s, { nombre: 'Servicios', monto: 100000, vence: '2026-11-25', estimado: true });
+  const antes = inv(s), saldo = C.saldos(s)[banco.id];
+  C.pagarReserva(s, serv.id, { cuentaId: banco.id, valor: 40000, fecha: HOY }); // el agua
+  let r = inv(s);
+  assert.equal(serv.estado, 'pendiente');
+  assert.equal(C.saldos(s)[banco.id], saldo - 40000);
+  assert.equal(r.libre, antes.libre); // salió de lo apartado, no de lo libre
+  assert.equal(r.reservasPend, antes.reservasPend - 40000);
+  assert.equal(C.agenda(s, 2026, 11, HOY)['2026-11-25'][0].clase, 'parcial');
+  C.pagarReserva(s, serv.id, { cuentaId: nequi.id, valor: 50000, fecha: HOY }); // la luz
+  assert.equal(C.abonado(s, serv), 90000); assert.equal(C.faltaReserva(s, serv), 10000);
+  assert.equal(inv(s).libre, antes.libre);
+  assert.equal(r.gastosPeriodo + 50000, inv(s).gastosPeriodo); // cada abono es un gasto real
+  assert.throws(() => C.cancelarReserva(s, serv.id));
+  C.saldarReserva(s, serv.id); // no llegó más recibo: lo que faltaba vuelve a lo libre
+  r = inv(s);
+  assert.equal(serv.estado, 'pagada'); assert.equal(r.libre, antes.libre + 10000);
+  // borrar un abono reabre la reserva y la plata vuelve a quedar apartada
+  C.eliminarMovimiento(s, C.abonosDe(s, serv)[1].id);
+  assert.equal(serv.estado, 'pendiente'); assert.equal(C.faltaReserva(s, serv), 60000);
+  assert.equal(inv(s).libre, antes.libre);
+  // pagar de más la cierra sola y el exceso sale de lo libre
+  C.pagarReserva(s, serv.id, { cuentaId: banco.id, valor: 75000, fecha: HOY });
+  assert.equal(serv.estado, 'pagada'); assert.equal(inv(s).libre, antes.libre - 15000);
+});
+
+test('editar una obligación no suelta la reserva que ya tiene abonos', () => {
+  const { s, banco } = base();
+  const cel = s.reservas.find((x) => x.nombre === 'Celular e internet');
+  C.pagarReserva(s, cel.id, { cuentaId: banco.id, valor: 30000, fecha: HOY });
+  const libre = inv(s).libre;
+  C.guardarObligacion(s, { id: cel.obligacionId, monto: 90000 }, HOY);
+  const r = s.reservas.find((x) => x.nombre === 'Celular e internet' && x.estado === 'pendiente');
+  assert.equal(r.id, cel.id); assert.equal(C.abonado(s, r), 30000); assert.equal(C.faltaReserva(s, r), 60000);
+  assert.equal(s.reservas.filter((x) => x.obligacionId === cel.obligacionId && x.estado === 'pendiente').length, 1);
+  assert.equal(inv(s).libre, libre - 10000);
 });

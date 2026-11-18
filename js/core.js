@@ -168,7 +168,7 @@ export function resumen(s, fecha = hoy()) {
   const r = periodo ? rangoPeriodo(s, periodo) : { fin: fecha, abierto: true };
   const atrasado = r.abierto && fecha > r.fin; // pasaron los 15 días y todavía no han pagado
   const hasta = atrasado ? fecha : r.fin;
-  const reservasPend = s.reservas.filter((x) => x.estado === 'pendiente' && x.vence <= hasta).reduce((a, x) => a + x.monto, 0);
+  const reservasPend = s.reservas.filter((x) => x.estado === 'pendiente' && x.vence <= hasta).reduce((a, x) => a + faltaReserva(s, x), 0);
   const pres = periodo ? presupuestosDe(s, periodo) : [];
   const presupRest = pres.reduce((a, p) => a + p.resta, 0);
   // El pago con que empezó la quincena cuenta como ingreso aunque ya estuviera dentro de los saldos iniciales.
@@ -249,7 +249,8 @@ export function eliminarMovimiento(s, id) {
   }
   if (m.reservaId) {
     const r = buscar(s.reservas, m.reservaId);
-    if (r) { r.estado = 'pendiente'; r.movimientoId = null; }
+    if (r && r.estado === 'pagada') r.estado = 'pendiente';
+    if (r && r.movimientoId === id) r.movimientoId = null;
   }
   s.movimientos = s.movimientos.filter((x) => x.id !== id);
 }
@@ -318,7 +319,9 @@ export function guardarObligacion(s, datos, fecha = hoy()) {
   // Las reservas pendientes de la quincena vigente siguen a la obligación.
   const u = ultimoPeriodo(s);
   if (u) {
-    s.reservas = s.reservas.filter((r) => !(r.obligacionId === o.id && r.periodo === u.id && r.estado === 'pendiente'));
+    const conAbonos = s.reservas.filter((r) => r.obligacionId === o.id && r.periodo === u.id && r.estado === 'pendiente' && abonado(s, r) > 0);
+    for (const r of conAbonos) { r.nombre = o.nombre; r.monto = montoObligacion(o, s.config.tasaUSD); r.estimado = !!o.estimado; }
+    s.reservas = s.reservas.filter((r) => !(r.obligacionId === o.id && r.periodo === u.id && r.estado === 'pendiente' && !conAbonos.includes(r)));
     const yaResuelta = s.reservas.some((r) => r.obligacionId === o.id && r.periodo === u.id);
     if (!yaResuelta || o.frecuencia === 'mensual') generarReservas(s, u.inicio, u.cubierto, u.inicio, o.id);
   }
@@ -326,7 +329,7 @@ export function guardarObligacion(s, datos, fecha = hoy()) {
 }
 export function eliminarObligacion(s, id) {
   s.obligaciones = s.obligaciones.filter((o) => o.id !== id);
-  s.reservas = s.reservas.filter((r) => !(r.obligacionId === id && r.estado === 'pendiente'));
+  s.reservas = s.reservas.filter((r) => !(r.obligacionId === id && r.estado === 'pendiente' && abonado(s, r) === 0));
 }
 export function guardarReserva(s, datos) {
   let r = datos.id ? buscar(s.reservas, datos.id) : null;
@@ -339,17 +342,31 @@ export function guardarReserva(s, datos) {
   if (r) Object.assign(r, nuevo); else { r = { ...nuevo, id: uid() }; s.reservas.push(r); }
   return r;
 }
-export function pagarReserva(s, id, { cuentaId, valor, fecha }) {
+// Una reserva se puede pagar en varios abonos. Cada abono es un gasto real que baja la cuenta;
+// lo que falta por pagar sigue apartado hasta que se complete o la persona la dé por saldada.
+export function abonosDe(s, r) { return s.movimientos.filter((m) => m.tipo === 'gasto' && m.reservaId === r.id).sort((a, b) => a.fecha.localeCompare(b.fecha)); }
+export function abonado(s, r) { return abonosDe(s, r).reduce((a, m) => a + m.valor, 0); }
+export function faltaReserva(s, r) { return Math.max(0, r.monto - abonado(s, r)); }
+export function pagarReserva(s, id, { cuentaId, valor, fecha, cerrar = false }) {
   const r = buscar(s.reservas, id);
   if (!r) throw new Error('La reserva ya no existe.');
   if (r.estado !== 'pendiente') throw new Error('Esa reserva ya no está pendiente.');
   const m = agregarMovimiento(s, { tipo: 'gasto', valor, fecha, cuentaId, categoriaId: null, reservaId: r.id, descripcion: r.nombre });
-  r.estado = 'pagada'; r.movimientoId = m.id;
+  r.movimientoId = m.id;
+  if (cerrar || abonado(s, r) >= r.monto) r.estado = 'pagada';
   return m;
+}
+// Da por saldada una reserva con abonos: lo que faltaba vuelve a la plata libre.
+export function saldarReserva(s, id) {
+  const r = buscar(s.reservas, id);
+  if (!r || r.estado !== 'pendiente') throw new Error('Esa reserva ya no está pendiente.');
+  if (!abonado(s, r)) throw new Error('No tiene abonos: cancélela si ya no la necesita.');
+  r.estado = 'pagada';
 }
 export function cancelarReserva(s, id) {
   const r = buscar(s.reservas, id);
   if (!r || r.estado !== 'pendiente') throw new Error('Solo se puede cancelar una reserva pendiente.');
+  if (abonado(s, r)) throw new Error('Esa reserva ya tiene abonos: dela por saldada en lugar de cancelarla.');
   r.estado = 'cancelada';
 }
 export function reactivarReserva(s, id) {
@@ -424,7 +441,7 @@ export function deshacerPeriodo(s) {
   if (s.periodos.length < 2) throw new Error('No hay una quincena anterior a la cual volver.');
   const p = s.periodos.pop();
   s.presupuestos = s.presupuestos.filter((x) => x.periodo !== p.id);
-  s.reservas = s.reservas.filter((r) => !(r.periodo === p.id && r.obligacionId && r.estado === 'pendiente'));
+  s.reservas = s.reservas.filter((r) => !(r.periodo === p.id && r.obligacionId && r.estado === 'pendiente' && abonado(s, r) === 0));
   const u = ultimoPeriodo(s);
   for (const r of s.reservas) if (r.periodo === p.id) r.periodo = u.id;
   if (p.cubierto > u.cubierto) { const hasta = p.cubierto; generarReservas(s, sumarDias(u.cubierto, 1), hasta); u.cubierto = hasta; }
@@ -551,8 +568,9 @@ export function agenda(s, y, m, fecha = hoy()) {
   const add = (f, x) => { (r[f] ||= []).push(x); };
   for (const x of s.reservas) {
     if (!x.vence.startsWith(pref)) continue;
-    const clase = x.estado === 'pagada' ? 'pagada' : x.estado === 'cancelada' ? 'cancelada' : x.vence < fecha ? 'vencida' : 'pendiente';
-    add(x.vence, { clase, id: x.id, nombre: x.nombre, monto: x.monto });
+    const ab = abonado(s, x);
+    const clase = x.estado === 'pagada' ? 'pagada' : x.estado === 'cancelada' ? 'cancelada' : ab ? 'parcial' : x.vence < fecha ? 'vencida' : 'pendiente';
+    add(x.vence, { clase, id: x.id, nombre: x.nombre, monto: x.monto, abonado: ab });
   }
   const u = ultimoPeriodo(s);
   for (const o of s.obligaciones) {
