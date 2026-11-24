@@ -70,6 +70,15 @@ const n = (t) => parseInt(t.replace(/[^\d-]/g, ''), 10);
   assert.match(await p.textContent('.pres[data-a=ed-pres]'), /Gastado \$15\.000 de \$225\.000/);
   assert.match(await p.textContent('.pres[data-a=ed-pres]'), /Le quedan 14 almuerzos/);
 
+  // atajo «lo de siempre»: un toque llena categoría, cuenta y valor
+  await p.click('#fab'); await p.waitForSelector('#hoja .atajo');
+  assert.match(await p.textContent('#hoja .atajo'), /Almuerzos.*Bancolombia.*\$15\.000/s);
+  await p.click('#hoja .atajo'); await p.waitForTimeout(150);
+  assert.equal(await p.inputValue('#hoja input[name=valor]'), '15.000');
+  assert.equal(await p.locator('#hoja label.chip', { hasText: 'Almuerzos' }).locator('input').isChecked(), true);
+  assert.equal(await p.locator('#hoja fieldset').nth(1).locator('label.chip', { hasText: 'Bancolombia' }).locator('input').isChecked(), true);
+  await p.click('#hoja .cerrar');
+
   // 2. transferencia: no es gasto
   await ir('inicio');
   await p.click('#fab'); await p.click('#hoja .tabs button[data-t=transferencia]'); await p.fill('#hoja input[name=valor]', '100000');

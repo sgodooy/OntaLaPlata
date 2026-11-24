@@ -323,3 +323,11 @@ i.p-parcial { background: linear-gradient(90deg, var(--verde2) 50%, var(--mostaz
 .mini-barra { height: 7px; margin: 6px 0 2px; max-width: 220px; }
 
 .banda-botones { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
+
+/* toques rápidos: sin la espera del doble toque ni el destello gris del iPhone */
+button, a, label.chip, .chip input, .cal-dia, summary { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.atajos { display: flex; gap: 8px; overflow-x: auto; margin: 0 -16px 10px; padding: 0 16px 4px; scrollbar-width: none; align-items: stretch; }
+.atajos > .suave { align-self: center; flex-shrink: 0; font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; font-weight: 700; }
+.atajo { flex-shrink: 0; text-align: left; border: 1.5px solid var(--verde); background: var(--papel); border-radius: 12px; padding: 7px 12px; display: grid; gap: 1px; }
+.atajo b { font-size: .9rem; } .atajo span { font-size: .78rem; color: var(--gris); }
+.atajo:active { background: var(--verde); color: var(--crema); } .atajo:active span { color: inherit; }

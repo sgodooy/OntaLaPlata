@@ -3,7 +3,7 @@ import * as DB from './db.js';
 import { iniciarTour, tourActivo } from './tour.js';
 import * as FX from './efectos.js';
 
-const VERSION_APP = 24; // sube con cada publicación; se muestra en Ajustes
+const VERSION_APP = 25; // sube con cada publicación; se muestra en Ajustes
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -496,20 +496,33 @@ function chequeoSetup() {
 }
 
 // ---------- hojas ----------
+// Combinaciones de categoría y cuenta más usadas en los últimos gastos, con el último valor de cada una.
+function atajos() {
+  const vistos = new Map();
+  for (const m of state.movimientos.filter((x) => x.tipo === 'gasto' && !x.reservaId && x.categoriaId).slice(-80).reverse()) {
+    const cat = C.categoria(state, m.categoriaId), cu = C.cuenta(state, m.cuentaId);
+    if (!cat || cat.archivada || !cu || cu.archivada) continue;
+    const k = `${m.categoriaId}|${m.cuentaId}`, v = vistos.get(k);
+    if (v) v.n++; else vistos.set(k, { n: 1, cat, cu, valor: m.valor });
+  }
+  const top = [...vistos.values()].sort((a, b) => b.n - a.n).slice(0, 3);
+  if (!top.length) return '';
+  return `<div class="atajos"><span class="suave">Lo de siempre</span>${top.map((t) => `<button type="button" class="atajo" data-a="atajo" data-cat="${t.cat.id}" data-cu="${t.cu.id}" data-v="${t.valor}"><b>${esc(t.cat.nombre)}</b><span>${esc(t.cu.nombre)} · ${f$(t.valor)}</span></button>`).join('')}</div>`;
+}
 function hojaMov(tipo = 'gasto', m = null, pre = {}) {
   const ed = !!m; const v = { fecha: hoy(), ...pre, ...(m || {}) };
   const cu = activas(); const selCu = v.cuentaId || state.config.ultimaCuenta || cu[0]?.id;
   const uso = {}; for (const x of state.movimientos.slice(-80)) if (x.tipo === 'gasto' && x.categoriaId) uso[x.categoriaId] = (uso[x.categoriaId] || 0) + 1;
   const orden = [...cats()].sort((a, b) => (uso[b.id] || 0) - (uso[a.id] || 0));
   const tabs = ed ? '' : `<div class="tabs">${['gasto', 'ingreso', 'transferencia', 'prestamo', 'invitacion'].map((t) => `<button type="button" data-a="tab-mov" data-t="${t}" class="${t === tipo ? 'activa' : ''}">${C.NOMBRE_TIPO[t]}</button>`).join('')}</div>`;
-  const valor = tipo === 'invitacion' ? '' : `<div class="valor-grande"><span>$</span><input name="valor" class="monto" inputmode="numeric" autocomplete="off" placeholder="0" value="${miles(Math.abs(v.valor || 0))}" aria-label="Valor" ${tipo === 'ajuste' || tipo === 'cobro' ? 'readonly' : ''}></div>`;
+  const valor = tipo === 'invitacion' ? '' : `<div class="valor-grande"><span>$</span><input name="valor" class="monto" inputmode="numeric" enterkeyhint="done" autocomplete="off" placeholder="0" value="${miles(Math.abs(v.valor || 0))}" aria-label="Valor" ${tipo === 'ajuste' || tipo === 'cobro' ? 'readonly' : ''}></div>`;
   // La fecha va a la vista, con atajos, para que un gasto de otro día no quede anotado como de hoy.
   const fecha = `<div class="campo-fecha">${campo('Fecha', `<input type="date" name="fecha" value="${v.fecha}" required>`)}<button type="button" class="btn mini sec" data-a="poner-fecha" data-f="${hoy()}">Hoy</button><button type="button" class="btn mini sec" data-a="poner-fecha" data-f="${C.sumarDias(hoy(), -1)}">Ayer</button></div>`;
   const desc = (etq = 'Descripción') => campo(etq, `<input name="descripcion" value="${esc(v.descripcion || '')}" maxlength="120">`);
   const cuentaSel = (etq, name, sel) => `<fieldset><legend>${etq}</legend>${chips(name, cu.concat(state.cuentas.filter((c) => c.archivada && c.id === sel)), sel)}</fieldset>`;
   let cuerpo = '';
   if (tipo === 'gasto') {
-    cuerpo = (ed ? '' : '<p class="pista">¿Y esta vaina cuánto costó?</p>') + valor
+    cuerpo = (ed ? '' : '<p class="pista">¿Y esta vaina cuánto costó?</p>' + atajos()) + valor
       + (v.reservaId ? `<p class="suave">Pago de la reserva «${esc(v.descripcion)}». No se imputa a ningún presupuesto.</p>` : `<fieldset><legend>Categoría</legend>${chips('categoriaId', orden.concat(state.categorias.filter((c) => c.archivada && c.id === v.categoriaId)), v.categoriaId)}</fieldset>`)
       + cuentaSel('Sale de', 'cuentaId', selCu)
       + fecha + `<details ${ed ? 'open' : ''}><summary>Más detalles</summary>${v.reservaId ? '' : desc()}${campo('Nota', `<textarea name="nota" rows="2" maxlength="300">${esc(v.nota || '')}</textarea>`)}</details>`;
@@ -661,6 +674,13 @@ const acciones = {
   'poner-fecha': (el) => { const i = el.closest('form').elements.fecha; i.value = el.dataset.f; marcarFechas(); },
   'ver-reposo': () => FX.fueraDelAire(true),
   'saldos-ok': () => commit(() => { state.config.ultimoCuadre = hoy(); }, 'Todo cuadra. Así da gusto.'),
+  atajo: (el) => {
+    const f = $('#hoja form');
+    for (const [name, v] of [['categoriaId', el.dataset.cat], ['cuentaId', el.dataset.cu]]) { const r = f.querySelector(`input[name=${name}][value="${v}"]`); if (r) r.checked = true; }
+    if (!C.parseMonto(f.elements.valor.value)) f.elements.valor.value = miles(Number(el.dataset.v));
+    f.elements.valor.blur();
+    f.querySelector('button.btn:not(.peligro):not(.sec)')?.scrollIntoView({ block: 'nearest' });
+  },
   cuadre: hojaCuadre,
   'ingreso-inicial': () => { const p = C.ultimoPeriodo(state); abrirHoja('Pago con que empezó la quincena', `<form data-form="ingresoInicial">
     <p class="suave">Es el pago que ya tenía en sus cuentas cuando empezó esta quincena, el ${C.fechaCorta(p.inicio)}. Se anota como ingreso del periodo sin sumarlo otra vez a los saldos. Si registró ese pago con el botón +, déjelo en cero.</p>
@@ -786,6 +806,12 @@ const formularios = {
 };
 
 // ---------- eventos ----------
+// En el celular, la opción se marca apenas el dedo la toca: así no se pierde el toque cuando
+// el teclado se esconde y la ventana se mueve debajo del dedo.
+document.addEventListener('pointerdown', (e) => {
+  const r = e.target.closest('label.chip')?.querySelector('input[type=radio]');
+  if (r && !r.checked) { r.checked = true; r.dispatchEvent(new Event('change', { bubbles: true })); }
+});
 document.addEventListener('click', (e) => {
   if (e.target.id === 'fondo') return cerrarHoja();
   const el = e.target.closest('[data-a]');
