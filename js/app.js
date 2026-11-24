@@ -3,7 +3,7 @@ import * as DB from './db.js';
 import { iniciarTour, tourActivo } from './tour.js';
 import * as FX from './efectos.js';
 
-const VERSION_APP = 25; // sube con cada publicación; se muestra en Ajustes
+const VERSION_APP = 26; // sube con cada publicación; se muestra en Ajustes
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -249,7 +249,7 @@ function tarjetaPres(p, per) {
     <div class="cab"><b>${esc(p.nombre)}</b><span class="num">${p.pct.toFixed(1).replace('.', ',')} %</span></div>
     <div class="barra ${cls}"><i style="width:${Math.min(100, p.pct)}%"></i></div>
     <div class="pie"><span>Gastado ${f$(p.gastado)} de ${f$(p.total)}</span><span>${p.exceso ? `<b class="neg">Se pasó por ${f$(p.exceso)}</b>` : `Quedan ${f$(p.resta)}`}</span></div>
-    ${uni ? `<div class="suave"><b>${uni.slice(3)}</b></div>` : ''}${p.auto ? `<div class="suave">Automático: ${p.dias} días × ${f$(p.valorRef)}</div>` : ''}${p.exceso ? '<div class="suave neg">No se me descuadre: el exceso sale de su plata libre.</div>' : ''}</button>`;
+    ${uni ? `<div class="suave"><b>${uni.slice(3)}</b></div>` : ''}${p.auto ? `<div class="suave">Automático: ${p.diasRestan !== null ? `${p.diasRestan} ${p.diasRestan === 1 ? 'día que queda' : 'días que quedan'}` : `${p.dias} días`} × ${f$(p.valorRef)}</div>` : ''}${p.exceso ? '<div class="suave neg">No se me descuadre: el exceso sale de su plata libre.</div>' : ''}</button>`;
 }
 function navPeriodo(clave, per) {
   const l = C.periodosConDatos(state);
@@ -594,7 +594,7 @@ function hojaPres(catId, per) {
     ${campo('Presupuesto de esta quincena', inMonto('monto', p?.monto || 0, c.porDia ? 'readonly' : ''))}
     ${campo('Valor de cada uno (opcional)', inMonto('valorRef', c.valorRef))}<p class="suave">Con él le digo cuántos ${esc(c.nombre.toLowerCase())} le quedan.</p>
     <label class="check"><input type="checkbox" name="porDia" ${c.porDia ? 'checked' : ''}>Calcular el presupuesto solo: valor de cada uno por cada día de la quincena</label>
-    <p class="suave">Cuenta todos los días, desde el pago hasta el día antes del siguiente (el 15 o el 30). Esta quincena son ${C.diasPresupuesto(state, per)} días; si el pago llega antes o después, se ajusta solo.</p>
+    <p class="suave">Lo que queda es ese valor por cada día desde mañana hasta el próximo pago (el 15 o el 30), y lo que ya gastó se cuenta aparte. Se recalcula solo cada día.</p>
     <details><summary>Ajustes de la categoría</summary>${campo('Nombre', `<input name="nombre" value="${esc(c.nombre)}" maxlength="50" required>`)}
     ${campo('Tipo de gasto', `<select name="tipo">${['habitual', 'social', 'antojo', 'extraordinario'].map((t) => `<option ${c.tipo === t ? 'selected' : ''}>${t}</option>`).join('')}</select>`)}
     <label class="check"><input type="checkbox" name="comida" ${c.comida ? 'checked' : ''}>Es comida (aparece en «Me invitaron»)</label>

@@ -153,16 +153,29 @@ export function montoPorDia(s, catId, periodo) {
   const cat = categoria(s, catId);
   return cat?.porDia && cat.valorRef > 0 ? cat.valorRef * diasPresupuesto(s, periodo) : null;
 }
-export function presupuestosDe(s, periodo) {
+// Presupuesto por día (como Almuerzos): mientras la quincena sigue abierta, lo que queda es el valor de cada uno
+// por los días que faltan desde mañana hasta el próximo pago (el 15 o el 30); lo ya gastado se suma aparte.
+// Una quincena cerrada se mide con el valor por todos sus días.
+export function presupuestosDe(s, periodo, fecha = hoy()) {
+  if (!s.periodos.some((x) => x.id === periodo)) return [];
+  const r = rangoPeriodo(s, periodo);
   return s.presupuestos.filter((p) => p.periodo === periodo).map((p) => {
     const cat = categoria(s, p.categoriaId);
-    const auto = montoPorDia(s, p.categoriaId, periodo);
-    const total = (auto ?? p.monto) + (p.arrastre || 0);
+    const porDia = !!(cat?.porDia && cat.valorRef > 0);
     const gastado = gastadoCategoria(s, p.categoriaId, periodo);
-    const resta = Math.max(0, total - gastado);
+    let total, resta, dias = null, diasRestan = null;
+    if (porDia && r.abierto) {
+      const desde = fecha < r.inicio ? sumarDias(r.inicio, -1) : fecha;
+      diasRestan = Math.max(0, diasEntre(desde, proximoPagoEsperado(r.inicio)));
+      resta = diasRestan * cat.valorRef; total = gastado + resta;
+    } else {
+      if (porDia) dias = diasPresupuesto(s, periodo);
+      total = (porDia ? dias * cat.valorRef : p.monto) + (p.arrastre || 0);
+      resta = Math.max(0, total - gastado);
+    }
     return {
-      id: p.id, categoriaId: p.categoriaId, nombre: cat?.nombre ?? 'Categoría eliminada', tipo: cat?.tipo, total, monto: auto ?? p.monto,
-      auto: auto !== null, dias: auto !== null ? diasPresupuesto(s, periodo) : null, valorRef: cat?.valorRef || 0,
+      id: p.id, categoriaId: p.categoriaId, nombre: cat?.nombre ?? 'Categoría eliminada', tipo: cat?.tipo, total, monto: porDia ? total : p.monto,
+      auto: porDia, dias, diasRestan, valorRef: cat?.valorRef || 0,
       arrastre: p.arrastre || 0, gastado, resta, exceso: Math.max(0, gastado - total),
       pct: total > 0 ? (gastado / total) * 100 : (gastado > 0 ? 100 : 0),
       unidades: cat?.valorRef > 0 ? Math.floor(resta / cat.valorRef) : null, historial: p.historial || [],
@@ -189,7 +202,7 @@ export function resumen(s, fecha = hoy()) {
   const atrasado = r.abierto && fecha > r.fin; // pasaron los 15 días y todavía no han pagado
   const hasta = atrasado ? fecha : r.fin;
   const reservasPend = s.reservas.filter((x) => x.estado === 'pendiente' && x.vence <= hasta).reduce((a, x) => a + faltaReserva(s, x), 0);
-  const pres = periodo ? presupuestosDe(s, periodo) : [];
+  const pres = periodo ? presupuestosDe(s, periodo, fecha) : [];
   const presupRest = pres.reduce((a, p) => a + p.resta, 0);
   // El pago con que empezó la quincena cuenta como ingreso aunque ya estuviera dentro de los saldos iniciales.
   let gastosPeriodo = 0, ingresosPeriodo = s.periodos.find((p) => p.id === periodo)?.ingresoInicial || 0;

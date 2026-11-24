@@ -348,7 +348,7 @@ test('una obligación se puede pasar a categoría con presupuesto sin perder lo 
   assert.equal(s.reservas.some((x) => x.nombre === 'Servicios públicos' && x.estado === 'pendiente'), false); // ya no se reserva
 });
 
-test('presupuesto por día: $18.000 por cada día de la quincena, de pago a pago', () => {
+test('presupuesto por día: lo que queda es $18.000 por cada día desde mañana hasta el próximo pago', () => {
   const { s, banco, alm } = base();
   assert.equal(C.proximoPagoEsperado('2026-11-15'), '2026-11-30');
   assert.equal(C.proximoPagoEsperado('2026-11-30'), '2026-12-15');
@@ -356,19 +356,20 @@ test('presupuesto por día: $18.000 por cada día de la quincena, de pago a pago
   assert.equal(C.proximoPagoEsperado('2027-02-15'), '2027-02-28');
   assert.throws(() => C.guardarCategoria(s, { id: alm.id, porDia: true, valorRef: 0 }));
   C.guardarCategoria(s, { id: alm.id, porDia: true, valorRef: 18000 });
-  let p = C.presupuestosDe(s, P)[0];
-  assert.equal(p.auto, true); assert.equal(p.dias, 15); assert.equal(p.total, 270000); // del 15 al 29
-  C.agregarMovimiento(s, { tipo: 'gasto', valor: 18000, fecha: HOY, cuentaId: banco.id, categoriaId: alm.id });
-  p = C.presupuestosDe(s, P)[0];
-  assert.equal(p.resta, 252000); assert.equal(p.unidades, 14);
-  inv(s);
-  // si el pago llega el 28, la quincena tuvo 13 días y el presupuesto se ajusta solo
+  let p = C.presupuestosDe(s, P, '2026-11-24')[0];
+  assert.equal(p.diasRestan, 6); assert.equal(p.resta, 108000); assert.equal(p.unidades, 6); // del 25 al 30
+  C.agregarMovimiento(s, { tipo: 'gasto', valor: 30000, fecha: '2026-11-24', cuentaId: banco.id, categoriaId: alm.id });
+  p = C.presupuestosDe(s, P, '2026-11-24')[0];
+  assert.equal(p.gastado, 30000); assert.equal(p.resta, 108000); assert.equal(p.total, 138000); // lo gastado va aparte
+  assert.equal(C.presupuestosDe(s, P, '2026-11-30')[0].resta, 0);
+  assert.equal(C.presupuestosDe(s, P, '2026-11-29')[0].resta, 18000);
+  assert.equal(C.presupuestosDe(s, P, '2026-11-15')[0].resta, 15 * 18000);
+  const r = C.resumen(s, '2026-11-24');
+  assert.equal(r.libre + r.conDueno, r.enCuentas); assert.ok(r.presupRest >= 108000);
+  // al cerrar la quincena se mide con todos sus días: si el pago llega el 28, fueron 13
   C.abrirPeriodo(s, '2026-11-28');
-  assert.equal(C.presupuestosDe(s, P)[0].total, 13 * 18000);
-  const n = C.presupuestosDe(s, '2026-11-28')[0];
-  assert.equal(n.dias, 17); assert.equal(n.total, 17 * 18000); // del 28 nov al 14 dic
-  // al apagarlo vuelve al valor fijo guardado
+  assert.equal(C.presupuestosDe(s, P, '2026-11-28')[0].total, 13 * 18000);
+  assert.equal(C.presupuestosDe(s, '2026-11-28', '2026-11-28')[0].diasRestan, 17); // del 29 nov al 15 dic
   C.guardarCategoria(s, { id: alm.id, porDia: false });
-  assert.equal(C.presupuestosDe(s, P)[0].auto, false);
-  inv(s);
+  assert.equal(C.presupuestosDe(s, P, '2026-11-28')[0].auto, false);
 });
