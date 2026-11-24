@@ -3,7 +3,7 @@ import * as DB from './db.js';
 import { iniciarTour, tourActivo } from './tour.js';
 import * as FX from './efectos.js';
 
-const VERSION_APP = 20; // sube con cada publicación; se muestra en Ajustes
+const VERSION_APP = 21; // sube con cada publicación; se muestra en Ajustes
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -511,9 +511,9 @@ function hojaMov(tipo = 'gasto', m = null, pre = {}) {
       + cuentaSel('Sale de', 'cuentaId', selCu)
       + fecha + `<details ${ed ? 'open' : ''}><summary>Más detalles</summary>${v.reservaId ? '' : desc()}${campo('Nota', `<textarea name="nota" rows="2" maxlength="300">${esc(v.nota || '')}</textarea>`)}</details>`;
   } else if (tipo === 'ingreso') {
-    const nueva = pre.nueva ?? C.sugerirNuevaQuincena(state, v.fecha);
+    const nueva = !!pre.nueva, sugerir = !nueva && C.sugerirNuevaQuincena(state, v.fecha);
     cuerpo = valor + cuentaSel('Entra a', 'cuentaId', selCu) + fecha + desc()
-      + (ed ? '' : `<label class="check"><input type="checkbox" name="nueva" ${nueva ? 'checked' : ''}>Con este pago empieza una quincena nueva</label>
+      + (ed ? '' : `<label class="check"><input type="checkbox" name="nueva" ${nueva ? 'checked' : ''}>Con este pago empieza una quincena nueva</label>${sugerir ? `<p class="pista">Ya pasaron ${C.diasEntre(C.ultimoPeriodo(state).inicio, v.fecha)} días desde su último pago. Si este es su sueldo, marque la casilla.</p>` : ''}
       <label class="check"><input type="checkbox" name="arrastrar">Sumar lo que sobró de cada presupuesto al de la quincena nueva</label>
       <p class="suave">Marque la primera casilla cuando sea su sueldo: se cierra la quincena actual y la nueva arranca en la fecha del pago, con sus presupuestos y reservas.</p>`);
   } else if (tipo === 'transferencia') {
@@ -677,7 +677,7 @@ const acciones = {
   },
   'abrir-periodo': hojaAbrir,
   'me-pagaron': () => hojaMov('ingreso', null, { nueva: true }),
-  'deshacer-periodo': () => { if (confirm('¿Deshacer la apertura de esta quincena? Sus gastos vuelven a contar en la anterior y se quitan sus presupuestos.')) commit(() => { C.deshacerPeriodo(state); ui.perPres = ui.perAna = null; }, 'Quincena deshecha.'); },
+  'deshacer-periodo': () => { if (confirm('¿Deshacer la apertura de esta quincena? Sus gastos vuelven a contar en la anterior y se quitan sus presupuestos.')) commit(() => { C.deshacerPeriodo(state); ui.perPres = ui.perAna = null; }, 'Quincena deshecha. Los movimientos se conservan y cuentan en la quincena anterior.'); },
   'cal-mes': (el) => { const [y, m] = (ui.calMes || hoy().slice(0, 7)).split('-').map(Number); const d = new Date(Date.UTC(y, m - 1 + Number(el.dataset.d), 1)); ui.calMes = d.toISOString().slice(0, 7); ui.calDia = null; render(); },
   'cal-dia': (el) => { ui.calDia = el.dataset.f; render(); },
   'cal-nuevo': (el) => { const f = el.dataset.f, dia = C.partes(f).d; abrirHoja(`Gasto fijo del ${C.fechaCorta(f)}`, `<form data-form="fijo"><input type="hidden" name="fecha" value="${f}">
@@ -729,7 +729,7 @@ const formularios = {
       if (p.exceso) return `No se me descuadre: se pasó por ${f$(p.exceso)} en ${p.nombre}.`;
       const u = p.unidades ? ` (${p.unidades} ${p.nombre.toLowerCase()})` : '';
       return `${p.pct >= 80 ? '¡Pilas pues! ' : 'Anotado. '}Quedan ${f$(p.resta)} en ${p.nombre}${u}.`;
-    }).then((ok) => { if (ok && cerrada && veredicto(C.capitulo(state, cerrada))[2] === 'bien') FX.confeti(); if (ok && cerrada) abrirHoja('Capítulo cerrado', `<div class="rodar">${creditos(cerrada)}</div>` + '<button class="btn ancho" data-a="cerrar" style="margin-top:12px">Seguir</button>'); return ok; });
+    }).then((ok) => { if (ok && cerrada && veredicto(C.capitulo(state, cerrada))[2] === 'bien') FX.confeti(); if (ok && cerrada) abrirHoja('Capítulo cerrado', `<div class="rodar">${creditos(cerrada)}</div>` + '<button class="btn sec ancho" data-a="deshacer-periodo" style="margin-top:12px">Me equivoqué: no era quincena nueva</button>' + '<button class="btn ancho" data-a="cerrar" style="margin-top:12px">Seguir</button>'); return ok; });
   },
   pagar: (d) => {
     if (!d.cuentaId) return aviso('Elija una cuenta.', true);

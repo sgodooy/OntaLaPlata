@@ -313,6 +313,18 @@ const n = (t) => parseInt(t.replace(/[^\d-]/g, ''), 10);
     }
   }
   await q.setViewportSize({ width: 390, height: 844 });
+  // caso real: un ingreso abrió una quincena sin querer; se deshace y el ingreso se queda
+  await va('inicio'); await q.click('#fab'); await q.click('#hoja .tabs button[data-t=ingreso]');
+  assert.equal(await q.isChecked('#hoja input[name=nueva]'), false, 'la casilla no viene marcada sola');
+  await q.fill('#hoja input[name=valor]', '70000'); await chip2('Nequi'); await q.check('#hoja input[name=nueva]');
+  const manana = await q.evaluate(() => { const d = new Date(Date.now() + 864e5); return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(d); });
+  await q.fill('#hoja input[name=fecha]', manana);
+  await q.click('#hoja form button.btn:not(.peligro):not(.sec)'); await q.waitForSelector('#hoja .creditos');
+  await q.click('#hoja [data-a=deshacer-periodo]'); await q.waitForSelector('#fondo', { state: 'hidden' });
+  const a6 = await tot();
+  assert.equal(a6.cuentas, a5.cuentas + 70000);
+  assert.match(await q.textContent('#vista'), /Quincena desde el/); // sigue abierta la misma de antes
+  a5.libre += 70000;
   // nada se desborda hacia los lados en el celular
   for (const r of ['inicio', 'movimientos', 'presupuestos', 'reservas', 'analisis', 'cuentas', 'ajustes']) {
     await va(r);
@@ -353,6 +365,9 @@ const n = (t) => parseInt(t.replace(/[^\d-]/g, ''), 10);
   await w.click('#fab'); await w.click('#hoja .tabs button[data-t=ingreso]'); await w.fill('#hoja input[name=valor]', '1000000');
   await w.locator('#hoja label.chip', { hasText: 'Bancolombia' }).click(); await w.check('#hoja input[name=nueva]'); await w.click('#hoja form button.btn:not(.sec)');
   await w.waitForSelector('.confeti'); assert.match(await w.textContent('#hoja .creditos'), /CAPÍTULO REDONDO/);
+  // si fue sin querer, se deshace desde ahí mismo y el ingreso se queda
+  const periodos = await w.evaluate(() => document.querySelectorAll('#hoja [data-a=deshacer-periodo]').length);
+  assert.equal(periodos, 1);
   if (SHOTS) { await w.waitForTimeout(1500); await w.screenshot({ path: SHOTS + '/15-capitulo.png' }); }
   await w.click('#hoja .cerrar');
   await w.goto(URL + '#ajustes'); await w.click('[data-a=ver-reposo]'); await w.waitForTimeout(1500);
