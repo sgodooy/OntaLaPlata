@@ -3,7 +3,7 @@ import * as DB from './db.js';
 import { iniciarTour, tourActivo } from './tour.js';
 import * as FX from './efectos.js';
 
-const VERSION_APP = 21; // sube con cada publicación; se muestra en Ajustes
+const VERSION_APP = 22; // sube con cada publicación; se muestra en Ajustes
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -145,7 +145,7 @@ function vInicio() {
   if (!ui.revision) {
     if (r.atrasado) h += `<div class="banda"><span><b>Ya pasaron 15 días desde su último pago.</b> La quincena sigue abierta hasta que le paguen.</span><button class="btn mini" data-a="me-pagaron">Me pagaron</button></div>`;
     const dc = state.config.ultimoCuadre ? C.diasEntre(state.config.ultimoCuadre, hoy()) : 99;
-    if (dc >= 7) h += `<div class="banda ok"><span>Hace ${dc} días no cuadra caja. ¿Los saldos sí son los reales?</span><button class="btn mini" data-a="cuadre">Cuadrar</button></div>`;
+    if (dc >= 7) h += `<div class="banda ok"><span>Hace ${dc} días no cuadra caja. ¿Los saldos de arriba son los que ve en sus bancos?</span><span class="banda-botones"><button class="btn mini" data-a="saldos-ok">Sí, están bien</button><button class="btn mini sec" data-a="cuadre">No, corregir</button></span></div>`;
     const db = state.config.ultimaCopia ? C.diasEntre(state.config.ultimaCopia, hoy()) : null;
     if ((db === null && state.movimientos.length >= 10) || db > 15) h += `<div class="banda ok"><span>${db === null ? 'Todavía no tiene copia de seguridad.' : `Su última copia de seguridad es de hace ${db} días.`}</span><button class="btn mini" data-a="copia">Descargar</button></div>`;
   }
@@ -654,6 +654,7 @@ const acciones = {
   recorrido: () => { if (ui.ruta !== 'inicio') { ui.ruta = 'inicio'; history.replaceState(null, '', '#inicio'); render(); } window.scrollTo(0, 0); recorrido(); },
   'poner-fecha': (el) => { const i = el.closest('form').elements.fecha; i.value = el.dataset.f; marcarFechas(); },
   'ver-reposo': () => FX.fueraDelAire(true),
+  'saldos-ok': () => commit(() => { state.config.ultimoCuadre = hoy(); }, 'Todo cuadra. Así da gusto.'),
   cuadre: hojaCuadre,
   'ingreso-inicial': () => { const p = C.ultimoPeriodo(state); abrirHoja('Pago con que empezó la quincena', `<form data-form="ingresoInicial">
     <p class="suave">Es el pago que ya tenía en sus cuentas cuando empezó esta quincena, el ${C.fechaCorta(p.inicio)}. Se anota como ingreso del periodo sin sumarlo otra vez a los saldos. Si registró ese pago con el botón +, déjelo en cero.</p>

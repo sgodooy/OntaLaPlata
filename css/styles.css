@@ -321,3 +321,5 @@ input[type="color"] { padding: 4px; height: 46px; }
 
 i.p-parcial { background: linear-gradient(90deg, var(--verde2) 50%, var(--mostaza) 50%); }
 .mini-barra { height: 7px; margin: 6px 0 2px; max-width: 220px; }
+
+.banda-botones { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
