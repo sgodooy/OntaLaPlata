@@ -135,14 +135,34 @@ export function gastadoCategoria(s, catId, periodo) {
   return t;
 }
 export const totalPresupuesto = (p) => p.monto + (p.arrastre || 0);
+// Fecha esperada del siguiente pago: el primer 15 o 30 (o fin de mes) que caiga al menos diez días después del pago.
+export function proximoPagoEsperado(inicio) {
+  for (let k = 10; k <= 25; k++) {
+    const f = sumarDias(inicio, k), { y, m, d } = partes(f);
+    if (d === 15 || d === Math.min(30, ultimoDia(y, m))) return f;
+  }
+  return sumarDias(inicio, DIAS_PERIODO);
+}
+// Días que cubre una quincena: si ya cerró, los reales; si sigue abierta, hasta el día antes del pago esperado.
+export function diasPresupuesto(s, periodo) {
+  const r = rangoPeriodo(s, periodo);
+  return r.abierto ? diasEntre(r.inicio, proximoPagoEsperado(r.inicio)) : diasEntre(r.inicio, r.fin) + 1;
+}
+// Categorías con presupuesto por día (como Almuerzos): valor de cada uno por los días de la quincena.
+export function montoPorDia(s, catId, periodo) {
+  const cat = categoria(s, catId);
+  return cat?.porDia && cat.valorRef > 0 ? cat.valorRef * diasPresupuesto(s, periodo) : null;
+}
 export function presupuestosDe(s, periodo) {
   return s.presupuestos.filter((p) => p.periodo === periodo).map((p) => {
     const cat = categoria(s, p.categoriaId);
-    const total = totalPresupuesto(p);
+    const auto = montoPorDia(s, p.categoriaId, periodo);
+    const total = (auto ?? p.monto) + (p.arrastre || 0);
     const gastado = gastadoCategoria(s, p.categoriaId, periodo);
     const resta = Math.max(0, total - gastado);
     return {
-      id: p.id, categoriaId: p.categoriaId, nombre: cat?.nombre ?? 'Categoría eliminada', tipo: cat?.tipo, total, monto: p.monto,
+      id: p.id, categoriaId: p.categoriaId, nombre: cat?.nombre ?? 'Categoría eliminada', tipo: cat?.tipo, total, monto: auto ?? p.monto,
+      auto: auto !== null, dias: auto !== null ? diasPresupuesto(s, periodo) : null, valorRef: cat?.valorRef || 0,
       arrastre: p.arrastre || 0, gastado, resta, exceso: Math.max(0, gastado - total),
       pct: total > 0 ? (gastado / total) * 100 : (gastado > 0 ? 100 : 0),
       unidades: cat?.valorRef > 0 ? Math.floor(resta / cat.valorRef) : null, historial: p.historial || [],
@@ -411,6 +431,8 @@ export function guardarCategoria(s, datos) {
   let c = datos.id ? categoria(s, datos.id) : null;
   const nuevo = { grupo: 'Otros', tipo: 'habitual', valorRef: 0, comida: false, archivada: false, ...(c || {}), ...datos };
   nuevo.nombre = String(nuevo.nombre || '').trim();
+  nuevo.porDia = !!nuevo.porDia;
+  if (nuevo.porDia && !(Number.isInteger(nuevo.valorRef) && nuevo.valorRef > 0)) throw new Error('Para calcularlo por día, escriba cuánto cuesta cada uno.');
   if (!nuevo.nombre) throw new Error('Póngale un nombre a la categoría.');
   if (s.categorias.some((x) => x.id !== nuevo.id && !x.archivada && x.nombre.toLowerCase() === nuevo.nombre.toLowerCase())) throw new Error('Ya existe una categoría con ese nombre.');
   if (c) Object.assign(c, nuevo); else { c = { ...nuevo, id: uid() }; s.categorias.push(c); }

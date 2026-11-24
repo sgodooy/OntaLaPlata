@@ -212,6 +212,18 @@ const n = (t) => parseInt(t.replace(/[^\d-]/g, ''), 10);
   await q.locator('.pres[data-a=ed-pres]', { hasText: 'Almuerzos' }).click(); await q.fill('#hoja input[name=monto]', '200000'); await ok2();
   await q.locator('.pres[data-a=ed-pres]', { hasText: 'Almuerzos' }).click();
   assert.match(await q.textContent('#hoja'), /\$225\.000 → \$200\.000/); await q.click('#hoja .cerrar');
+  // Almuerzos por día: $18.000 por cada día de la quincena
+  const libreAntes = (await tot()).libre; await va('presupuestos');
+  await q.locator('.pres[data-a=ed-pres]', { hasText: 'Almuerzos' }).click();
+  await q.fill('#hoja input[name=valorRef]', '18000'); await q.check('#hoja input[name=porDia]');
+  assert.equal(await q.evaluate(() => document.querySelector('#hoja input[name=monto]').readOnly), true);
+  await ok2();
+  const diasQ = await q.evaluate(() => Number(document.querySelector('.pres[data-a=ed-pres]').textContent.match(/Automático: (\d+) días/)[1]));
+  assert.ok(diasQ >= 13 && diasQ <= 17, 'días de la quincena: ' + diasQ);
+  const esperado = 'de $' + String(diasQ * 18000).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  assert.ok((await q.locator('.pres[data-a=ed-pres]', { hasText: 'Almuerzos' }).textContent()).includes(esperado), esperado);
+  await q.locator('.pres[data-a=ed-pres]', { hasText: 'Almuerzos' }).click(); await q.uncheck('#hoja input[name=porDia]'); await q.fill('#hoja input[name=monto]', '200000'); await ok2();
+  assert.equal((await tot()).libre, libreAntes); await va('presupuestos');
   await q.click('[data-a=nueva-cat]'); await q.fill('#hoja input[name=nombre]', 'Mascota'); await q.fill('#hoja input[name=monto]', '20000'); await ok2();
   assert.equal(await q.locator('.pres[data-a=ed-pres]', { hasText: 'Mascota' }).count(), 1);
   // obligación en dólares

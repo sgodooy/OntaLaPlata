@@ -3,7 +3,7 @@ import * as DB from './db.js';
 import { iniciarTour, tourActivo } from './tour.js';
 import * as FX from './efectos.js';
 
-const VERSION_APP = 23; // sube con cada publicación; se muestra en Ajustes
+const VERSION_APP = 24; // sube con cada publicación; se muestra en Ajustes
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -249,7 +249,7 @@ function tarjetaPres(p, per) {
     <div class="cab"><b>${esc(p.nombre)}</b><span class="num">${p.pct.toFixed(1).replace('.', ',')} %</span></div>
     <div class="barra ${cls}"><i style="width:${Math.min(100, p.pct)}%"></i></div>
     <div class="pie"><span>Gastado ${f$(p.gastado)} de ${f$(p.total)}</span><span>${p.exceso ? `<b class="neg">Se pasó por ${f$(p.exceso)}</b>` : `Quedan ${f$(p.resta)}`}</span></div>
-    ${uni ? `<div class="suave"><b>${uni.slice(3)}</b></div>` : ''}${p.exceso ? '<div class="suave neg">No se me descuadre: el exceso sale de su plata libre.</div>' : ''}</button>`;
+    ${uni ? `<div class="suave"><b>${uni.slice(3)}</b></div>` : ''}${p.auto ? `<div class="suave">Automático: ${p.dias} días × ${f$(p.valorRef)}</div>` : ''}${p.exceso ? '<div class="suave neg">No se me descuadre: el exceso sale de su plata libre.</div>' : ''}</button>`;
 }
 function navPeriodo(clave, per) {
   const l = C.periodosConDatos(state);
@@ -578,9 +578,11 @@ function hojaPres(catId, per) {
   const c = C.categoria(state, catId); const p = C.presupuestosDe(state, per).find((x) => x.categoriaId === catId);
   abrirHoja(c.nombre, `<form data-form="pres"><input type="hidden" name="cat" value="${catId}"><input type="hidden" name="per" value="${per}">
     <p class="suave">Quincena ${C.nombrePeriodo(state, per)}${p ? ` · gastado ${f$(p.gastado)}` : ''}${p?.arrastre ? ` · incluye ${f$(p.arrastre)} que sobraron de la quincena anterior` : ''}</p>
-    ${campo('Presupuesto de esta quincena', inMonto('monto', p?.monto || 0))}
+    ${campo('Presupuesto de esta quincena', inMonto('monto', p?.monto || 0, c.porDia ? 'readonly' : ''))}
+    ${campo('Valor de cada uno (opcional)', inMonto('valorRef', c.valorRef))}<p class="suave">Con él le digo cuántos ${esc(c.nombre.toLowerCase())} le quedan.</p>
+    <label class="check"><input type="checkbox" name="porDia" ${c.porDia ? 'checked' : ''}>Calcular el presupuesto solo: valor de cada uno por cada día de la quincena</label>
+    <p class="suave">Cuenta todos los días, desde el pago hasta el día antes del siguiente (el 15 o el 30). Esta quincena son ${C.diasPresupuesto(state, per)} días; si el pago llega antes o después, se ajusta solo.</p>
     <details><summary>Ajustes de la categoría</summary>${campo('Nombre', `<input name="nombre" value="${esc(c.nombre)}" maxlength="50" required>`)}
-    ${campo('Valor de referencia por unidad (opcional)', inMonto('valorRef', c.valorRef))}<p class="suave">Con él le digo cuántos ${esc(c.nombre.toLowerCase())} le quedan.</p>
     ${campo('Tipo de gasto', `<select name="tipo">${['habitual', 'social', 'antojo', 'extraordinario'].map((t) => `<option ${c.tipo === t ? 'selected' : ''}>${t}</option>`).join('')}</select>`)}
     <label class="check"><input type="checkbox" name="comida" ${c.comida ? 'checked' : ''}>Es comida (aparece en «Me invitaron»)</label>
     <button type="button" class="btn peligro mini" data-a="archivar-cat" data-id="${catId}">Archivar categoría</button></details>
@@ -593,6 +595,7 @@ function hojaCategoria(k) {
     ${campo('Nombre', `<input name="nombre" value="${esc(v.nombre)}" maxlength="50" required>`)}
     ${campo('Tipo de gasto', `<select name="tipo">${['habitual', 'social', 'antojo', 'extraordinario'].map((t) => `<option ${v.tipo === t ? 'selected' : ''}>${t}</option>`).join('')}</select>`)}
     ${campo('Valor de referencia por unidad (opcional)', inMonto('valorRef', v.valorRef))}<p class="suave">Por ejemplo, lo que cuesta un almuerzo. Con él le digo cuántos le quedan.</p>
+    <label class="check"><input type="checkbox" name="porDia" ${v.porDia ? 'checked' : ''}>Calcular su presupuesto solo: ese valor por cada día de la quincena</label>
     <label class="check"><input type="checkbox" name="comida" ${v.comida ? 'checked' : ''}>Es comida (aparece en «Me invitaron»)</label>
     <button class="btn ancho">${k ? 'Guardar' : 'Agregar'}</button></form>`);
 }
@@ -754,8 +757,8 @@ const formularios = {
     return commit(() => C.cobrar(state, d.id, { cuentaId: d.cuentaId, fecha: d.fecha }), 'Recibido. Ya está en su cuenta.');
   },
   pres: (d) => commit(() => {
-    C.guardarCategoria(state, { id: d.cat, nombre: d.nombre, valorRef: C.parseMonto(d.valorRef), tipo: d.tipo, comida: d.comida === 'on' });
-    C.fijarPresupuesto(state, d.per, d.cat, C.parseMonto(d.monto), hoy());
+    C.guardarCategoria(state, { id: d.cat, nombre: d.nombre, valorRef: C.parseMonto(d.valorRef), tipo: d.tipo, comida: d.comida === 'on', porDia: d.porDia === 'on' });
+    C.fijarPresupuesto(state, d.per, d.cat, C.montoPorDia(state, d.cat, d.per) ?? C.parseMonto(d.monto), hoy());
   }, 'Presupuesto guardado.'),
   cat: (d) => commit(() => {
     const c = C.guardarCategoria(state, { nombre: d.nombre, tipo: d.tipo });
@@ -767,7 +770,10 @@ const formularios = {
     if (d.rep === 'una') C.guardarReserva(state, { ...base, vence: d.fecha });
     else C.guardarObligacion(state, { ...base, frecuencia: 'mensual', dia: C.partes(d.fecha).d }, hoy());
   }, 'Esa platica ya tiene dueño.'),
-  categoria: (d) => commit(() => C.guardarCategoria(state, { id: d.id || undefined, nombre: d.nombre, tipo: d.tipo, valorRef: C.parseMonto(d.valorRef), comida: d.comida === 'on' }), d.id ? 'Categoría guardada.' : 'Categoría agregada.'),
+  categoria: (d) => commit(() => {
+    const k = C.guardarCategoria(state, { id: d.id || undefined, nombre: d.nombre, tipo: d.tipo, valorRef: C.parseMonto(d.valorRef), comida: d.comida === 'on', porDia: d.porDia === 'on' });
+    if (k.porDia && !state.presupuestos.some((p) => p.periodo === P() && p.categoriaId === k.id)) C.fijarPresupuesto(state, P(), k.id, C.montoPorDia(state, k.id, P()), hoy());
+  }, d.id ? 'Categoría guardada.' : 'Categoría agregada.'),
   obAPresupuesto: (d) => commit(() => C.obligacionACategoria(state, d.id, C.parseMonto(d.monto)), (c) => `Listo: «${c.nombre}» ahora se controla en Presupuestos.`),
   ingresoInicial: (d) => commit(() => C.fijarIngresoInicial(state, C.ultimoPeriodo(state).id, C.parseMonto(d.valor)), 'Guardado.'),
   cuenta: (d) => commit(() => C.guardarCuenta(state, { id: d.id || undefined, nombre: d.nombre, saldoInicial: C.parseMonto(d.saldo), color: d.color, icono: d.icono || '' }, hoy()), 'Cuenta guardada.'),
@@ -812,6 +818,7 @@ document.addEventListener('change', (e) => {
     iconoDesdeArchivo(t.files[0]).then((url) => { f.elements.icono.value = url; f.querySelector('.c-prev').innerHTML = `<img src="${url}" alt="Imagen elegida">`; })
       .catch(() => aviso('No pude leer esa imagen. Pruebe con otra.', true));
   }
+  if (t.name === 'porDia' && t.form?.elements.monto) t.form.elements.monto.readOnly = t.checked;
   if ('recordar' in t.dataset) { const v = t.checked; commit(() => { state.config.recordarCuadre = v; }, v ? 'Le recordaré cuadrar cada semana.' : 'Listo, no le vuelvo a recordar.'); }
   if ('anim' in t.dataset) { const v = t.checked; commit(() => { state.config.animaciones = v; }, v ? 'Animaciones encendidas.' : 'Animaciones apagadas.').then((ok) => { if (ok) FX.usarAnimaciones(v); }); }
 });
