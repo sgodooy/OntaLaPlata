@@ -3,7 +3,7 @@ import * as DB from './db.js';
 import { iniciarTour, tourActivo } from './tour.js';
 import * as FX from './efectos.js';
 
-const VERSION_APP = 22; // sube con cada publicación; se muestra en Ajustes
+const VERSION_APP = 23; // sube con cada publicación; se muestra en Ajustes
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -145,7 +145,8 @@ function vInicio() {
   if (!ui.revision) {
     if (r.atrasado) h += `<div class="banda"><span><b>Ya pasaron 15 días desde su último pago.</b> La quincena sigue abierta hasta que le paguen.</span><button class="btn mini" data-a="me-pagaron">Me pagaron</button></div>`;
     const dc = state.config.ultimoCuadre ? C.diasEntre(state.config.ultimoCuadre, hoy()) : 99;
-    if (dc >= 7) h += `<div class="banda ok"><span>Hace ${dc} días no cuadra caja. ¿Los saldos de arriba son los que ve en sus bancos?</span><span class="banda-botones"><button class="btn mini" data-a="saldos-ok">Sí, están bien</button><button class="btn mini sec" data-a="cuadre">No, corregir</button></span></div>`;
+    // El recordatorio de cuadre es opcional y viene apagado: el cuadre sigue a mano en Mis cuentas.
+    if (state.config.recordarCuadre === true && dc >= 7) h += `<div class="banda ok"><span>Hace ${dc} días no cuadra caja. ¿Los saldos de arriba son los que ve en sus bancos?</span><span class="banda-botones"><button class="btn mini" data-a="saldos-ok">Sí, están bien</button><button class="btn mini sec" data-a="cuadre">No, corregir</button></span></div>`;
     const db = state.config.ultimaCopia ? C.diasEntre(state.config.ultimaCopia, hoy()) : null;
     if ((db === null && state.movimientos.length >= 10) || db > 15) h += `<div class="banda ok"><span>${db === null ? 'Todavía no tiene copia de seguridad.' : `Su última copia de seguridad es de hace ${db} días.`}</span><button class="btn mini" data-a="copia">Descargar</button></div>`;
   }
@@ -403,6 +404,8 @@ function vAjustes() {
     <div class="botones"><button class="btn sec" data-a="csv-movs">Movimientos en CSV</button><button class="btn sec" data-a="csv-pres">Presupuestos en CSV</button></div>
     <div class="botones"><button class="btn sec" data-a="revision">Revisar una copia (solo lectura)</button></div>
     <div class="botones ed"><button class="btn sec" data-a="restaurar">Restaurar una copia</button><button class="btn peligro" data-a="borrar-todo">Borrar todo</button></div></div>
+    <h2>Cuadre de caja</h2><div class="tarjeta"><label class="check"><input type="checkbox" data-recordar ${c.recordarCuadre === true ? 'checked' : ''}>Recordarme cada semana que revise si los saldos coinciden con los del banco</label>
+    <p class="suave">El cuadre de caja sigue disponible cuando quiera en Mis cuentas.</p></div>
     <h2>Animaciones</h2><div class="tarjeta"><label class="check"><input type="checkbox" data-anim ${c.animaciones !== false ? 'checked' : ''}>Efectos de televisor: encendido al abrir, números que ruedan y pantalla «fuera del aire» tras un minuto y medio sin tocar la app</label>
     <button class="btn sec ancho" data-a="ver-reposo">Ver la pantalla «fuera del aire»</button></div>
     <h2>Ayuda</h2><div class="tarjeta"><button class="btn sec ancho" data-a="recorrido">Ver el recorrido otra vez</button></div>
@@ -809,6 +812,7 @@ document.addEventListener('change', (e) => {
     iconoDesdeArchivo(t.files[0]).then((url) => { f.elements.icono.value = url; f.querySelector('.c-prev').innerHTML = `<img src="${url}" alt="Imagen elegida">`; })
       .catch(() => aviso('No pude leer esa imagen. Pruebe con otra.', true));
   }
+  if ('recordar' in t.dataset) { const v = t.checked; commit(() => { state.config.recordarCuadre = v; }, v ? 'Le recordaré cuadrar cada semana.' : 'Listo, no le vuelvo a recordar.'); }
   if ('anim' in t.dataset) { const v = t.checked; commit(() => { state.config.animaciones = v; }, v ? 'Animaciones encendidas.' : 'Animaciones apagadas.').then((ok) => { if (ok) FX.usarAnimaciones(v); }); }
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#fondo').hidden) cerrarHoja(); });
