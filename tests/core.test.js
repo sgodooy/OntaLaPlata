@@ -373,3 +373,46 @@ test('presupuesto por día: lo que queda es $18.000 por cada día desde mañana 
   C.guardarCategoria(s, { id: alm.id, porDia: false });
   assert.equal(C.presupuestosDe(s, P, '2026-11-28')[0].auto, false);
 });
+
+test('deuda por cuotas semanales: se reserva cada semana y para sola al completarse', () => {
+  const { s, banco } = base();
+  // aretes: $100.000, ya pagó $25.000, cuotas de $25.000 los viernes desde el 20 de noviembre
+  const o = C.guardarObligacion(s, { nombre: 'Aretes', monto: 25000, frecuencia: 'semanal', dia: 5, desde: '2026-11-20', tope: 100000, pagadoAntes: 25000 }, HOY);
+  const cuotas = () => s.reservas.filter((r) => r.obligacionId === o.id).map((r) => `${r.vence} ${r.monto}`);
+  assert.deepEqual(cuotas(), ['2026-11-20 25000', '2026-11-27 25000']); // dentro de la quincena (hasta el 29)
+  assert.equal(C.diaSemana('2026-11-27'), 5);
+  assert.deepEqual(C.deudaDe(s, o), { tope: 100000, pagado: 25000, falta: 75000 });
+  const libre = inv(s).libre;
+  C.pagarReserva(s, s.reservas.find((r) => r.obligacionId === o.id && r.vence === '2026-11-20').id, { cuentaId: banco.id, valor: 25000, fecha: '2026-11-20' });
+  assert.equal(inv(s).libre, libre); assert.equal(C.deudaDe(s, o).falta, 50000);
+  // el calendario de diciembre muestra solo la cuota que falta
+  const dic = Object.entries(C.agenda(s, 2026, 12, HOY)).filter(([, xs]) => xs.some((x) => x.nombre === 'Aretes'));
+  assert.deepEqual(dic.map(([f, xs]) => `${f} ${xs.find((x) => x.nombre === 'Aretes').monto}`), ['2026-12-04 25000']);
+  // la quincena siguiente reserva esa última cuota y no más
+  C.abrirPeriodo(s, '2026-11-30');
+  assert.deepEqual(cuotas(), ['2026-11-20 25000', '2026-11-27 25000', '2026-12-04 25000']);
+  assert.throws(() => C.guardarObligacion(s, { nombre: 'X', monto: 1, frecuencia: 'semanal', dia: 8 }, HOY));
+  inv(s);
+});
+
+test('arriendo y diezmo se pagan solos el día del pago', () => {
+  const { s, banco, nequi } = base();
+  const arr = s.obligaciones.find((o) => o.nombre === 'Arriendo');
+  C.guardarObligacion(s, { id: arr.id, alAbrir: true }, HOY);
+  const diez = C.guardarObligacion(s, { nombre: 'Diezmo', monto: 93000, frecuencia: 'quincenal', dia: 1, alAbrir: true, cuentaId: nequi.id }, HOY);
+  C.abrirPeriodo(s, '2026-11-30');
+  C.agregarMovimiento(s, { tipo: 'ingreso', valor: 930000, fecha: '2026-11-30', cuentaId: banco.id });
+  const antes = C.saldos(s);
+  const pagadas = C.pagarAlAbrir(s, '2026-11-30', banco.id, '2026-11-30');
+  assert.deepEqual(pagadas.map((r) => r.nombre).sort(), ['Arriendo', 'Diezmo']);
+  assert.equal(C.saldos(s)[banco.id], antes[banco.id] - 350000); // arriendo: de la cuenta del sueldo
+  assert.equal(C.saldos(s)[nequi.id], antes[nequi.id] - 93000); // diezmo: de la cuenta elegida
+  assert.ok(s.reservas.filter((r) => r.periodo === '2026-11-30' && [arr.id, diez.id].includes(r.obligacionId)).every((r) => r.estado === 'pagada'));
+  assert.equal(C.pagarAlAbrir(s, '2026-11-30', banco.id, '2026-11-30').length, 0); // no paga dos veces
+  // si esa quincena se abrió por error, deshacerla también deshace los pagos automáticos
+  const conIngreso = C.saldos(s);
+  C.deshacerPeriodo(s);
+  assert.equal(C.saldos(s)[banco.id], conIngreso[banco.id] + 350000); assert.equal(C.saldos(s)[nequi.id], conIngreso[nequi.id] + 93000);
+  assert.equal(s.movimientos.filter((m) => m.pagoAlAbrir).length, 0);
+  const r = C.resumen(s, '2026-11-30'); assert.equal(r.libre + r.conDueno, r.enCuentas);
+});

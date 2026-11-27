@@ -271,6 +271,20 @@ const n = (t) => parseInt(t.replace(/[^\d-]/g, ''), 10);
   assert.match(await q.locator('.pres[data-a=ed-pres]', { hasText: 'Servicios públicos' }).textContent(), /de \$50\.000/);
   await q.click('#fab'); assert.equal(await q.locator('#hoja label.chip', { hasText: 'Servicios públicos' }).count(), 1); await q.click('#hoja .cerrar');
   a3.libre -= 50000;
+  // aretes: deuda de $100.000 en cuotas semanales de $25.000
+  const aSem = await tot(); await va('reservas');
+  await q.click('[data-a=nueva-ob]'); await q.fill('#hoja input[name=nombre]', 'Aretes'); await q.fill('#hoja input[name=valor]', '25000');
+  await q.selectOption('#hoja select[name=frecuencia]', 'semanal');
+  assert.equal(await q.isVisible('#hoja select[name=diaSemana]'), true); assert.equal(await q.isVisible('#hoja input[name=dia]'), false);
+  const hoyF = await q.evaluate(() => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date()));
+  const dSem = await q.evaluate((f) => { const [y, m, d] = f.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d)).getUTCDay() || 7; }, hoyF);
+  await q.selectOption('#hoja select[name=diaSemana]', String(dSem)); await q.fill('#hoja input[name=desde]', hoyF);
+  await q.fill('#hoja input[name=tope]', '100000'); await q.fill('#hoja input[name=pagadoAntes]', '25000'); await ok2();
+  assert.match(await q.locator('.fila', { hasText: 'Aretes' }).last().textContent(), /Deuda: pagado \$25\.000 de \$100\.000 · faltan \$75\.000/);
+  assert.equal(await q.locator(`.cal-dia[data-f="${hoyF}"] i`).count() >= 1, true); // la cuota de hoy sale en el calendario
+  assert.equal((await tot()).libre, aSem.libre - 25000);
+  await va('reservas'); await q.locator('.fila', { hasText: 'Aretes' }).last().locator('[data-a=ed-ob]').click(); await q.click('#hoja [data-a=borrar-ob]');
+  await q.waitForSelector('#fondo', { state: 'hidden' }); assert.deepEqual(await tot(), aSem);
   // catálogo de categorías en Ajustes: agregar, usar, quitar y recuperar
   await va('ajustes');
   await q.click('[data-a=cat-nueva]'); await q.fill('#hoja input[name=nombre]', 'Gatos'); await ok2();
@@ -311,14 +325,21 @@ const n = (t) => parseInt(t.replace(/[^\d-]/g, ''), 10);
   const a4 = await tot(); assert.equal(a4.libre, a3.libre - 60000);
   await va('reservas'); await q.click('[data-a=cal-mes][data-d="1"]');
   assert.ok(await q.locator('.cal-dia i.p-previsto').count() >= 3);
+  // el arriendo se marca para pagarse solo el día del pago
+  await va('reservas'); await q.locator('.fila', { hasText: 'Arriendo' }).last().locator('[data-a=ed-ob]').click();
+  assert.equal(await q.isVisible('#hoja select[name=cuentaId]'), false);
+  await q.check('#hoja input[name=alAbrir]'); assert.equal(await q.isVisible('#hoja select[name=cuentaId]'), true); await ok2();
+  assert.match(await q.locator('.fila', { hasText: 'Arriendo' }).last().textContent(), /se paga sola desde la cuenta del sueldo/);
   // el pago abre una quincena nueva y muestra los créditos finales de la anterior
   await va('inicio'); await q.click('#fab'); await q.click('#hoja .tabs button[data-t=ingreso]'); await q.fill('#hoja input[name=valor]', '1000000');
   await chip2('Bancolombia'); await q.check('#hoja input[name=nueva]'); await q.click('#hoja form button.btn:not(.peligro):not(.sec)');
   await q.waitForSelector('#hoja .creditos'); await q.click('#hoja [data-a=cerrar]');
+  // el arriendo se pagó solo con el sueldo
+  assert.match(await q.textContent('#aviso'), /Se pagaron solos: Arriendo/);
   assert.match(await q.textContent('#vista'), /Quincena desde el/);
   await va('presupuestos'); assert.equal(await q.locator('[data-a=deshacer-periodo]').count(), 1);
   assert.equal(await q.locator('.pres[data-a=ed-pres]').count(), 4); // incluye Servicios públicos, que ya es presupuesto
-  const a5 = await tot(); assert.equal(a5.cuentas, a4.cuentas + 1000000);
+  const a5 = await tot(); assert.equal(a5.cuentas, a4.cuentas + 1000000 - 350000); // menos el arriendo, que se pagó solo
   // los días del calendario y los campos de fecha caben en su tarjeta, también en celulares angostos
   for (const ancho of [320, 375, 390]) {
     await q.setViewportSize({ width: ancho, height: 800 });

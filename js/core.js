@@ -302,11 +302,32 @@ function vencimientos(o, desde, hasta) {
 }
 // Reservas que corresponden a un rango de fechas. Las mensuales van completas el día en que vencen;
 // las quincenales salen una vez por periodo, contando los días desde el pago (inicioPeriodo).
+// Día de la semana de una fecha: 1 = lunes … 7 = domingo.
+export function diaSemana(f) { const { y, m, d } = partes(f); return new Date(Date.UTC(y, m - 1, d)).getUTCDay() || 7; }
+// Fechas en que vence una obligación semanal dentro de un rango, sin contar antes de su primera cuota.
+function semanas(o, desde, hasta) {
+  const r = [];
+  for (let f = o.desde && o.desde > desde ? o.desde : desde; f <= hasta; f = sumarDias(f, 1)) if (diaSemana(f) === o.dia) r.push(f);
+  return r;
+}
+// Deudas que se pagan por cuotas (como los aretes): cuánto suman, cuánto se ha pagado y cuánto falta.
+export function deudaDe(s, o) {
+  if (!(o?.tope > 0)) return null;
+  const pagado = (o.pagadoAntes || 0) + s.reservas.filter((r) => r.obligacionId === o.id).reduce((a, r) => a + abonado(s, r), 0);
+  return { tope: o.tope, pagado, falta: Math.max(0, o.tope - pagado) };
+}
+// Lo que falta por apartar de una deuda: el total menos lo pagado antes y lo que ya tiene reserva.
+function faltaPorReservar(s, o) {
+  const reservado = s.reservas.filter((r) => r.obligacionId === o.id && r.estado !== 'cancelada')
+    .reduce((a, r) => a + (r.estado === 'pagada' ? abonado(s, r) : Math.max(r.monto, abonado(s, r))), 0);
+  return o.tope - (o.pagadoAntes || 0) - reservado;
+}
 export function reservasParaRango(obligaciones, desde, hasta, tasa, inicioPeriodo = null) {
   const r = [];
   for (const o of obligaciones) {
     if (!o.activa) continue;
     const fechas = o.frecuencia === 'mensual' ? vencimientos(o, desde, hasta)
+      : o.frecuencia === 'semanal' ? semanas(o, desde, hasta)
       : inicioPeriodo ? [sumarDias(inicioPeriodo, Math.min(DIAS_PERIODO, Math.max(1, o.dia || 1)) - 1)] : [];
     for (const vence of fechas) {
       r.push({ obligacionId: o.id, nombre: o.nombre, monto: montoObligacion(o, tasa), moneda: o.moneda, montoUSD: o.montoUSD,
@@ -317,12 +338,18 @@ export function reservasParaRango(obligaciones, desde, hasta, tasa, inicioPeriod
 }
 export function generarReservas(s, desde, hasta, inicioPeriodo = null, soloId = null) {
   const nuevas = [], periodo = ultimoPeriodo(s)?.id ?? null;
-  for (const r of reservasParaRango(s.obligaciones, desde, hasta, s.config.tasaUSD, inicioPeriodo)) {
+  const candidatas = reservasParaRango(s.obligaciones, desde, hasta, s.config.tasaUSD, inicioPeriodo).sort((a, b) => a.vence.localeCompare(b.vence));
+  for (const r of candidatas) {
     if (soloId && r.obligacionId !== soloId) continue;
     const o = s.obligaciones.find((x) => x.id === r.obligacionId);
     const repetida = s.reservas.some((x) => x.obligacionId === r.obligacionId
       && (x.vence === r.vence || (o.frecuencia === 'quincenal' && x.periodo === periodo)));
     if (repetida) continue;
+    if (o.tope > 0) { // una deuda deja de reservarse cuando se completa; la última cuota es lo que falte
+      const falta = faltaPorReservar(s, o);
+      if (falta <= 0) continue;
+      r.monto = Math.min(r.monto, falta);
+    }
     const n = { id: uid(), ...r, periodo, estado: 'pendiente', movimientoId: null };
     s.reservas.push(n); nuevas.push(n);
   }
@@ -340,8 +367,13 @@ function validarObligacion(o) {
   if (!String(o.nombre || '').trim()) throw new Error('Póngale un nombre.');
   if (o.moneda === 'USD') { if (!(o.montoUSD > 0)) throw new Error('Escriba el valor en dólares.'); }
   else if (!(Number.isInteger(o.monto) && o.monto > 0)) throw new Error('El valor debe ser mayor que cero.');
-  if (!['quincenal', 'mensual'].includes(o.frecuencia)) throw new Error('Elija cada cuánto se paga.');
-  const max = o.frecuencia === 'quincenal' ? DIAS_PERIODO : 31;
+  if (!['quincenal', 'mensual', 'semanal'].includes(o.frecuencia)) throw new Error('Elija cada cuánto se paga.');
+  if (o.frecuencia === 'semanal' && o.desde && !fechaValida(o.desde)) throw new Error('La fecha de la primera cuota no es válida.');
+  if (o.tope !== undefined && o.tope !== null && o.tope !== 0) {
+    if (!(Number.isInteger(o.tope) && o.tope > 0)) throw new Error('El total de la deuda no es válido.');
+    if (!(Number.isInteger(o.pagadoAntes || 0) && (o.pagadoAntes || 0) >= 0 && (o.pagadoAntes || 0) < o.tope)) throw new Error('Lo pagado antes debe ser menor que el total.');
+  }
+  const max = o.frecuencia === 'quincenal' ? DIAS_PERIODO : o.frecuencia === 'semanal' ? 7 : 31;
   if (!(Number.isInteger(o.dia) && o.dia >= 1 && o.dia <= max)) throw new Error(`El día debe estar entre 1 y ${max}.`);
 }
 export function guardarObligacion(s, datos, fecha = hoy()) {
@@ -408,6 +440,22 @@ export function obligacionACategoria(s, id, montoQuincena) {
     fijarPresupuesto(s, u.id, cat.id, (p ? p.monto : 0) + montoQuincena);
   }
   return cat;
+}
+// Obligaciones que se van el mismo día del pago (como arriendo y diezmo): al abrir la quincena se pagan solas,
+// desde la cuenta elegida en la obligación o, si no tiene, desde la cuenta donde entró el sueldo.
+export function pagarAlAbrir(s, periodoId, cuentaSueldo, fecha) {
+  const pagadas = [];
+  for (const r of s.reservas.filter((x) => x.periodo === periodoId && x.estado === 'pendiente')) {
+    const o = s.obligaciones.find((x) => x.id === r.obligacionId);
+    if (!o?.alAbrir || abonado(s, r)) continue;
+    const c = cuenta(s, o.cuentaId);
+    const cuentaId = c && !c.archivada ? c.id : cuentaSueldo;
+    if (!cuentaId) continue;
+    const m = pagarReserva(s, r.id, { cuentaId, valor: r.monto, fecha, cerrar: true });
+    m.pagoAlAbrir = periodoId; // si la quincena se deshace, este pago también
+    pagadas.push(r);
+  }
+  return pagadas;
 }
 // Da por saldada una reserva con abonos: lo que faltaba vuelve a la plata libre.
 export function saldarReserva(s, id) {
@@ -495,6 +543,8 @@ export function abrirPeriodo(s, inicio, { arrastrar = false } = {}) {
 export function deshacerPeriodo(s) {
   if (s.periodos.length < 2) throw new Error('No hay una quincena anterior a la cual volver.');
   const p = s.periodos.pop();
+  // los pagos que se registraron solos al abrirla se deshacen con ella
+  for (const m of s.movimientos.filter((x) => x.pagoAlAbrir === p.id)) eliminarMovimiento(s, m.id);
   s.presupuestos = s.presupuestos.filter((x) => x.periodo !== p.id);
   s.reservas = s.reservas.filter((r) => !(r.periodo === p.id && r.obligacionId && r.estado === 'pendiente' && abonado(s, r) === 0));
   const u = ultimoPeriodo(s);
@@ -632,6 +682,15 @@ export function agenda(s, y, m, fecha = hoy()) {
     if (!o.activa || o.frecuencia !== 'mensual' || !u) continue;
     const f = pref + p2(Math.min(Math.max(1, o.dia), ultimoDia(y, m)));
     if (f > u.cubierto && !s.reservas.some((x) => x.obligacionId === o.id && x.vence === f)) add(f, { clase: 'previsto', obligacionId: o.id, nombre: o.nombre, monto: montoObligacion(o, s.config.tasaUSD) });
+  }
+  for (const o of s.obligaciones) {
+    if (!o.activa || o.frecuencia !== 'semanal' || !u) continue;
+    let falta = o.tope > 0 ? faltaPorReservar(s, o) : Infinity;
+    for (const f of semanas(o, sumarDias(u.cubierto, 1), `${pref}${p2(ultimoDia(y, m))}`)) {
+      if (falta <= 0) break;
+      const monto = Math.min(montoObligacion(o, s.config.tasaUSD), falta); falta -= monto;
+      if (f.startsWith(pref)) add(f, { clase: 'previsto', obligacionId: o.id, nombre: o.nombre, monto });
+    }
   }
   for (const p of s.periodos) if (p.inicio.startsWith(pref)) add(p.inicio, { clase: 'pago' });
   return r;

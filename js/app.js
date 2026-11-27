@@ -3,7 +3,8 @@ import * as DB from './db.js';
 import { iniciarTour, tourActivo } from './tour.js';
 import * as FX from './efectos.js';
 
-const VERSION_APP = 26; // sube con cada publicación; se muestra en Ajustes
+const VERSION_APP = 27;
+const DIAS_SEM = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']; // sube con cada publicación; se muestra en Ajustes
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -121,6 +122,12 @@ async function iconoDesdeArchivo(file) {
   cv.width = cv.height = 128;
   cv.getContext('2d').drawImage(img, (img.width - lado) / 2, (img.height - lado) / 2, lado, lado, 0, 0, 128, 128);
   return cv.toDataURL('image/png');
+}
+function filaDeuda(o) {
+  const d = C.deudaDe(state, o);
+  if (!d) return '';
+  return d.falta ? `<div class="barra mini-barra"><i style="width:${Math.min(100, (d.pagado / d.tope) * 100)}%"></i></div><div class="suave">Deuda: pagado ${f$(d.pagado)} de ${f$(d.tope)} · faltan ${f$(d.falta)}</div>`
+    : `<div><span class="etiqueta verde">Deuda saldada</span> <span class="suave">${f$(d.tope)} pagados</span></div>`;
 }
 function filaReserva(r) {
   const vencida = r.estado === 'pendiente' && r.vence < hoy();
@@ -287,7 +294,7 @@ function vReservas() {
   if (hechas.length) h += `<h2>Ya resueltas en esta quincena</h2><div class="tarjeta">${hechas.map(filaReserva).join('')}</div>`;
   h += '</div><div>';
   h += `<h2>Obligaciones periódicas <button class="btn mini ed" data-a="nueva-ob">+ Obligación</button></h2><div class="tarjeta">${state.obligaciones.map((o) => `<div class="fila"><div><div class="nombre">${esc(o.nombre)} ${o.activa ? '' : '<span class="etiqueta">En pausa</span>'}</div>
-    <div class="suave">${o.frecuencia === 'quincenal' ? `Cada quincena, ${o.dia === 1 ? 'el día del pago' : `${o.dia - 1} ${o.dia === 2 ? 'día' : 'días'} después del pago`}` : `Cada mes, el día ${o.dia}`}${o.estimado ? ' · estimado' : ''}${o.moneda === 'USD' ? ` · USD ${o.montoUSD}` : ''}</div></div>
+    <div class="suave">${o.frecuencia === 'quincenal' ? `Cada quincena, ${o.dia === 1 ? 'el día del pago' : `${o.dia - 1} ${o.dia === 2 ? 'día' : 'días'} después del pago`}` : o.frecuencia === 'semanal' ? `Cada semana, los ${DIAS_SEM[o.dia - 1].toLowerCase()}` : `Cada mes, el día ${o.dia}`}${o.estimado ? ' · estimado' : ''}${o.moneda === 'USD' ? ` · USD ${o.montoUSD}` : ''}${o.alAbrir ? ` · se paga sola desde ${esc(C.cuenta(state, o.cuentaId)?.nombre || 'la cuenta del sueldo')}` : ''}</div>${filaDeuda(o)}</div>
     <div class="der">${num(C.montoObligacion(o, state.config.tasaUSD))}<div class="ed"><button class="enlace" data-a="ed-ob" data-id="${o.id}">Editar</button></div></div></div>`).join('') || '<div class="vacio">No hay obligaciones periódicas.</div>'}</div>`;
   const pc = [...state.porCobrar].sort((a, b) => (a.estado === b.estado ? b.fecha.localeCompare(a.fecha) : a.estado === 'pendiente' ? -1 : 1));
   h += `<h2>Me deben <button class="btn mini ed" data-a="nueva-deuda">+ Deuda</button></h2><div class="tarjeta">${pc.map((d) => `<div class="fila"><div><div class="nombre">${esc(d.persona)} ${d.estado === 'recibido' ? '<span class="etiqueta verde">Recibido</span>' : ''}</div>
@@ -579,9 +586,16 @@ function hojaObligacion(o) {
     ${campo('Nombre', `<input name="nombre" value="${esc(v.nombre)}" maxlength="60" required>`)}
     <div class="dos">${campo('Moneda', `<select name="moneda"><option value="COP" ${v.moneda === 'COP' ? 'selected' : ''}>Pesos</option><option value="USD" ${v.moneda === 'USD' ? 'selected' : ''}>Dólares</option></select>`)}
     ${campo('Valor', `<input name="valor" inputmode="decimal" value="${v.moneda === 'USD' ? v.montoUSD : miles(v.monto)}" required>`)}</div>
-    <div class="dos">${campo('Se paga', `<select name="frecuencia"><option value="quincenal" ${v.frecuencia === 'quincenal' ? 'selected' : ''}>Cada quincena</option><option value="mensual" ${v.frecuencia === 'mensual' ? 'selected' : ''}>Cada mes</option></select>`)}
-    ${campo('Día de vencimiento', `<input name="dia" inputmode="numeric" value="${v.dia}" required>`)}</div>
-    <p class="suave">Mensual: día del mes (1 a 31); se reserva completa en la quincena en que vence. Quincenal: día dentro de la quincena (1 a 14). Los dólares se convierten con la tasa de Ajustes.</p>
+    ${campo('Se paga', `<select name="frecuencia">${[['quincenal', 'Cada quincena'], ['mensual', 'Cada mes'], ['semanal', 'Cada semana']].map(([k, n]) => `<option value="${k}" ${v.frecuencia === k ? 'selected' : ''}>${n}</option>`).join('')}</select>`)}
+    <div class="f-dia" ${v.frecuencia === 'semanal' ? 'hidden' : ''}>${campo('Día de vencimiento', `<input name="dia" inputmode="numeric" value="${v.frecuencia === 'semanal' ? 1 : v.dia}">`)}
+      <p class="suave">Mensual: día del mes (1 a 31); se reserva completa en la quincena en que vence. Quincenal: 1 es el mismo día del pago, 2 el día siguiente, y así. Los dólares se convierten con la tasa de Ajustes.</p></div>
+    <div class="f-sem" ${v.frecuencia === 'semanal' ? '' : 'hidden'}>
+      <div class="dos">${campo('Día de la semana', `<select name="diaSemana">${DIAS_SEM.map((n, k) => `<option value="${k + 1}" ${v.frecuencia === 'semanal' && v.dia === k + 1 ? 'selected' : ''}>${n}</option>`).join('')}</select>`)}
+      ${campo('Primera cuota', `<input type="date" name="desde" value="${v.desde || hoy()}">`)}</div>
+      <div class="dos">${campo('Total de la deuda (opcional)', inMonto('tope', v.tope || 0, 'placeholder="0"'))}${campo('Ya pagado antes', inMonto('pagadoAntes', v.pagadoAntes || 0, 'placeholder="0"'))}</div>
+      <p class="suave">Con un total, cada semana se aparta la cuota y se deja de apartar al completar la deuda; la última cuota es lo que falte.</p></div>
+    <label class="check"><input type="checkbox" name="alAbrir" ${v.alAbrir ? 'checked' : ''}>Se paga el mismo día que me pagan: registrar el pago solo al abrir la quincena</label>
+    <div class="f-abrir" ${v.alAbrir ? '' : 'hidden'}>${campo('Sale de', `<select name="cuentaId"><option value="">La cuenta donde entra el sueldo</option>${activas().map((c) => `<option value="${c.id}" ${v.cuentaId === c.id ? 'selected' : ''}>${esc(c.nombre)}</option>`).join('')}</select>`)}</div>
     <label class="check"><input type="checkbox" name="estimado" ${v.estimado ? 'checked' : ''}>El valor es un estimado</label>
     <label class="check"><input type="checkbox" name="activa" ${v.activa ? 'checked' : ''}>Activa</label>
     <div class="botones">${o ? `<button type="button" class="btn peligro" data-a="borrar-ob" data-id="${o.id}">Eliminar</button>` : ''}<button class="btn">Guardar</button></div>
@@ -745,11 +759,16 @@ const formularios = {
     const cerrada = tipo === 'ingreso' && !previo && d.nueva === 'on' ? P() : null;
     return commit(() => {
       if (previo) return C.editarMovimiento(state, previo.id, m);
-      if (cerrada) C.abrirPeriodo(state, m.fecha, { arrastrar: d.arrastrar === 'on' });
+      if (cerrada) {
+        const p = C.abrirPeriodo(state, m.fecha, { arrastrar: d.arrastrar === 'on' });
+        const mov = C.agregarMovimiento(state, m);
+        ui.pagadasSolas = C.pagarAlAbrir(state, p.id, m.cuentaId, m.fecha).map((r) => r.nombre);
+        return mov;
+      }
       if (tipo === 'prestamo') return C.prestar(state, { valor, persona: m.persona, cuentaId: m.cuentaId, fecha: m.fecha, concepto: desc });
       return C.agregarMovimiento(state, m);
     }, () => {
-      if (cerrada) return 'Quincena nueva abierta. ¡Pilas pues!';
+      if (cerrada) return `Quincena nueva abierta.${ui.pagadasSolas?.length ? ` Se pagaron solos: ${ui.pagadasSolas.join(', ')}.` : ''} ¡Pilas pues!`;
       if (tipo !== 'gasto' || previo?.reservaId) return previo ? 'Cambios guardados.' : 'Anotado.';
       const p = C.presupuestosDe(state, C.periodoDe(state, m.fecha)).find((x) => x.categoriaId === m.categoriaId);
       if (!p) return 'Anotado como gasto no presupuestado: salió de su plata libre.';
@@ -767,7 +786,10 @@ const formularios = {
   },
   reserva: (d) => commit(() => C.guardarReserva(state, { id: d.id || undefined, nombre: d.nombre.trim(), monto: C.parseMonto(d.monto), vence: d.vence, estimado: d.estimado === 'on' }), 'Esa platica ya tiene dueño.'),
   obligacion: (d) => commit(() => {
-    const o = { id: d.id || undefined, nombre: d.nombre.trim(), moneda: d.moneda, frecuencia: d.frecuencia, dia: parseInt(d.dia, 10), estimado: d.estimado === 'on', activa: d.activa === 'on' };
+    const sem = d.frecuencia === 'semanal';
+    const o = { id: d.id || undefined, nombre: d.nombre.trim(), moneda: d.moneda, frecuencia: d.frecuencia, dia: parseInt(sem ? d.diaSemana : d.dia, 10), estimado: d.estimado === 'on', activa: d.activa === 'on',
+      alAbrir: d.alAbrir === 'on', cuentaId: d.alAbrir === 'on' && d.cuentaId ? d.cuentaId : null,
+      desde: sem ? d.desde : null, tope: sem ? C.parseMonto(d.tope) : 0, pagadoAntes: sem ? C.parseMonto(d.pagadoAntes) : 0 };
     if (d.moneda === 'USD') { o.montoUSD = parseFloat(String(d.valor).replace(',', '.')) || 0; o.monto = 0; } else { o.monto = C.parseMonto(d.valor); o.montoUSD = 0; }
     C.guardarObligacion(state, o, hoy());
   }, 'Obligación guardada.'),
@@ -802,7 +824,8 @@ const formularios = {
     for (const c of activas()) reales[c.id] = C.parseMonto(d['real_' + c.id]);
     return C.cuadrar(state, reales, hoy());
   }, (aj) => (aj.length ? `Cuadrado con ${aj.length} ${aj.length === 1 ? 'ajuste' : 'ajustes'}.` : 'Todo cuadra. Así da gusto.')),
-  abrir: (d) => commit(() => C.abrirPeriodo(state, d.fecha, { arrastrar: d.arrastrar === 'on' }), 'Quincena abierta. ¡Pilas pues!'),
+  abrir: (d) => commit(() => { const p = C.abrirPeriodo(state, d.fecha, { arrastrar: d.arrastrar === 'on' }); return C.pagarAlAbrir(state, p.id, null, d.fecha); },
+    (pag) => `Quincena abierta.${pag.length ? ` Se pagaron solos: ${pag.map((r) => r.nombre).join(', ')}.` : ''} ¡Pilas pues!`),
 };
 
 // ---------- eventos ----------
@@ -844,6 +867,8 @@ document.addEventListener('change', (e) => {
     iconoDesdeArchivo(t.files[0]).then((url) => { f.elements.icono.value = url; f.querySelector('.c-prev').innerHTML = `<img src="${url}" alt="Imagen elegida">`; })
       .catch(() => aviso('No pude leer esa imagen. Pruebe con otra.', true));
   }
+  if (t.form?.dataset.form === 'obligacion' && t.name === 'frecuencia') { t.form.querySelector('.f-sem').hidden = t.value !== 'semanal'; t.form.querySelector('.f-dia').hidden = t.value === 'semanal'; }
+  if (t.form?.dataset.form === 'obligacion' && t.name === 'alAbrir') t.form.querySelector('.f-abrir').hidden = !t.checked;
   if (t.name === 'porDia' && t.form?.elements.monto) t.form.elements.monto.readOnly = t.checked;
   if ('recordar' in t.dataset) { const v = t.checked; commit(() => { state.config.recordarCuadre = v; }, v ? 'Le recordaré cuadrar cada semana.' : 'Listo, no le vuelvo a recordar.'); }
   if ('anim' in t.dataset) { const v = t.checked; commit(() => { state.config.animaciones = v; }, v ? 'Animaciones encendidas.' : 'Animaciones apagadas.').then((ok) => { if (ok) FX.usarAnimaciones(v); }); }
